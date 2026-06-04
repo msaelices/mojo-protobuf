@@ -1,0 +1,16 @@
+[project]
+name = "mojo-protobuf"
+version = "0.1.0"
+description = "A pure-Mojo Protocol Buffers implementation"
+authors = ["Manuel Saelices <msaelices@gmail.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly"]
+platforms = ["linux-64", "osx-arm64"]
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+max = "*"
+
+[tasks]
+test = "mojo test -I src test/"
+format = "mojo format ./"

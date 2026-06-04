@@ -1,0 +1,12 @@
+# Pixi
+.pixi/
+*.lock.tmp
+
+# Mojo build artifacts
+*.mojopkg
+__pycache__/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
