@@ -12,5 +12,7 @@ readme = "README.md"
 max = "*"
 
 [tasks]
-test = "mojo run -I src test/test_wire.mojo"
+test-wire = "mojo run -I src test/test_wire.mojo"
+test-fields = "mojo run -I src test/test_fields.mojo"
+test = { depends-on = ["test-wire", "test-fields"] }
 format = "mojo format ./"

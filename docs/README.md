@@ -10,6 +10,9 @@ written for someone who programs but doesn't already know protobuf.
 
 - [The protobuf wire format](concepts/wire-format.md) — how bytes encode fields:
   varints, ZigZag, field tags, and wire types, with worked examples.
+- [Messages and fields](concepts/messages.md) — how a message is assembled from
+  typed fields, the decode loop, and why `skip_field` enables forward
+  compatibility.
 
 ## Design
 
