@@ -72,10 +72,10 @@ illegal/deprecated wire types (groups `3`/`4`, and `6`/`7`) are rejected.
 
 ## The `Message` trait
 
-`protobuf.message` wraps the field layer into a typed-message API. A message type
-conforms to `Message` by providing two methods — `encode_to` (write its fields)
-and `merge_field` (read or skip one field) — and the generic `encode`/`decode`
-functions drive the rest:
+`protobuf.message` turns a struct into a serializable message. The trait's three
+methods — `encode_to`, `merge_field`, and `encoded_size` — have **default
+implementations driven by reflection**, so the common case needs no
+serialization code at all:
 
 ```mojo
 @fieldwise_init
@@ -83,41 +83,58 @@ struct Person(Message):
     var id: Int64
     var name: String
 
-    def __init__(out self):  # default-constructible so decode() can build one
+    def __init__(out self):  # the only requirement: default-constructible
         self.id = 0
         self.name = String("")
-
-    def encoded_size(self) -> Int:  # lets encode() reserve the buffer exactly
-        return int64_field_size(1, self.id) + string_field_size(2, self.name)
-
-    def encode_to(self, mut output: List[Byte]):
-        write_int64(1, self.id, output)
-        write_string(2, self.name, output)
-
-    def merge_field(
-        mut self, field_number: Int, wire_type: Int,
-        data: Span[Byte, _], mut pos: Int,
-    ) raises:
-        if field_number == 1:
-            self.id = read_int64(data, pos)
-        elif field_number == 2:
-            self.name = read_string(data, pos)
-        else:
-            skip_field(data, pos, wire_type)
 
 var bytes = encode(Person(id=1, name=String("ada")))
 var p = decode[Person](Span(bytes))
 ```
 
-`decode` default-constructs the message, so fields absent from the wire keep
-their defaults — exactly protobuf's "missing field" semantics. `encode` calls
-`encoded_size()` first and builds the output `List` with that exact capacity, so
-serialization does zero reallocations (see [`protobuf.size`](wire-format.md)).
+Reflection walks the struct's fields and serializes each by its type, assigning
+**field number = the field's 1-based position**. Supported field types are
+`Int`, `Int64`, `UInt64`, `Bool`, and `String` (the machine-width `Int` maps to
+an `int64` varint). Any other type is a compile error (unless you override the
+methods). `decode` default-constructs the message, so
+fields absent from the wire keep their defaults — protobuf's missing-field
+semantics — and `encode` reserves the buffer with `encoded_size()`, so it does
+zero reallocations (see [`protobuf.size`](wire-format.md)).
 
-This hand-written example keeps two things simple that the code generator will
-handle: it doesn't check that a known field's wire type matches (a mismatched
-tag would mis-decode), and it always serializes every field rather than omitting
-default-valued scalars as canonical proto3 does.
+### Overriding for control
+
+For non-sequential or sparse field numbers, types reflection doesn't cover
+(nested messages, repeated, floats, …), wire-type validation of known fields, or
+canonical proto3 default-omission, implement the methods yourself. This is the
+shape a `protoc` generator emits per message:
+
+```mojo
+@fieldwise_init
+struct Tagged(Message):
+    var x: Int64        # field 5
+    var y: String       # field 12
+
+    def __init__(out self):
+        self.x = 0
+        self.y = String("")
+
+    def encoded_size(self) -> Int:
+        return int64_field_size(5, self.x) + string_field_size(12, self.y)
+
+    def encode_to(self, mut output: List[Byte]):
+        write_int64(5, self.x, output)
+        write_string(12, self.y, output)
+
+    def merge_field(
+        mut self, field_number: Int, wire_type: Int,
+        data: Span[Byte, _], mut pos: Int,
+    ) raises:
+        if field_number == 5:
+            self.x = read_int64(data, pos)
+        elif field_number == 12:
+            self.y = read_string(data, pos)
+        else:
+            skip_field(data, pos, wire_type)
+```
 
 ## What's next
 
