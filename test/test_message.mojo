@@ -254,10 +254,17 @@ struct Nums32(Message):
 
 
 def test_reflection_int32_fields() raises:
-    # A negative int32 must round-trip (encoded as a sign-extended varint).
-    var got = decode[Nums32](Span(encode(Nums32(-2147483648, 4294967295))))
-    assert_equal(got.a, Int32(-2147483648))  # Int32.MIN
-    assert_equal(got.b, UInt32(4294967295))  # UInt32.MAX
+    # Negatives sign-extend to a 10-byte varint; size must agree with the bytes.
+    var vals: List[Int32] = [0, -1, Int32.MIN, Int32.MAX]
+    for v in vals:
+        var n = Nums32(v, 0)
+        var bytes = encode(n)
+        assert_equal(len(bytes), n.encoded_size())
+        var got = decode[Nums32](Span(bytes))
+        assert_equal(got.a, v)
+
+    var u = decode[Nums32](Span(encode(Nums32(0, UInt32.MAX))))
+    assert_equal(u.b, UInt32.MAX)
 
 
 def main() raises:
