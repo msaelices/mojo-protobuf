@@ -6,7 +6,9 @@ This package is a work in progress. The planned surface area is:
 - A `protoc` plugin that generates Mojo message structs from `.proto` files.
 - Generated bindings for real schemas (e.g. `livekit/protocol`).
 
-Nothing is implemented yet beyond this scaffold.
+So far the wire-format primitives are implemented (see `protobuf.wire`):
+varints, ZigZag, and field tags. Length-delimited and fixed-width value codecs,
+the message API, and code generation are still to come.
 """
 
 comptime VERSION = "0.1.0"
