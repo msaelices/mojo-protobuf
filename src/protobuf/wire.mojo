@@ -149,10 +149,10 @@ def encode_fixed32(value: UInt32, mut out: List[Byte]):
         value: The value to encode (fixed32/sfixed32, or a bit-cast float).
         out: The byte buffer to append to.
     """
-    out.append(Byte(value & 0xFF))
-    out.append(Byte((value >> 8) & 0xFF))
-    out.append(Byte((value >> 16) & 0xFF))
-    out.append(Byte((value >> 24) & 0xFF))
+    var v = value
+    for _ in range(4):
+        out.append(Byte(v))  # Byte() truncates to the low 8 bits
+        v >>= 8
 
 
 def decode_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
@@ -189,7 +189,7 @@ def encode_fixed64(value: UInt64, mut out: List[Byte]):
     """
     var v = value
     for _ in range(8):
-        out.append(Byte(v & 0xFF))
+        out.append(Byte(v))
         v >>= 8
 
 
@@ -230,8 +230,7 @@ def encode_bytes(data: Span[Byte, _], mut out: List[Byte]):
         out: The byte buffer to append to.
     """
     encode_varint(UInt64(len(data)), out)
-    for b in data:
-        out.append(b)
+    out.extend(data)
 
 
 def decode_bytes(
