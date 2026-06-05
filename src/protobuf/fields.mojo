@@ -77,13 +77,19 @@ def write_bool(field_number: Int, value: Bool, mut output: List[Byte]):
 
 
 def write_fixed32(field_number: Int, value: UInt32, mut output: List[Byte]):
-    """Writes a `fixed32`/`sfixed32`/`float` field as 4 little-endian bytes."""
+    """Writes a `fixed32`/`sfixed32` field as 4 little-endian bytes.
+
+    For `float`, use `write_float`.
+    """
     encode_tag(field_number, WIRE_I32, output)
     encode_fixed32(value, output)
 
 
 def write_fixed64(field_number: Int, value: UInt64, mut output: List[Byte]):
-    """Writes a `fixed64`/`sfixed64`/`double` field as 8 little-endian bytes."""
+    """Writes a `fixed64`/`sfixed64` field as 8 little-endian bytes.
+
+    For `double`, use `write_double`.
+    """
     encode_tag(field_number, WIRE_I64, output)
     encode_fixed64(value, output)
 
