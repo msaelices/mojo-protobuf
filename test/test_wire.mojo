@@ -193,5 +193,72 @@ def test_bytes_length_exceeds_buffer_raises() raises:
         _ = decode_bytes(Span(data), pos)
 
 
+def test_fixed64_truncated_raises() raises:
+    var short: List[Byte] = [Byte(1), Byte(2), Byte(3)]
+    var pos = 0
+    with assert_raises():
+        _ = decode_fixed64(Span(short), pos)
+
+
+def test_fixed_pos_at_end_raises() raises:
+    # pos already at len: the `pos + 4 > len` guard must fire.
+    var buf = List[Byte]()
+    encode_fixed32(UInt32(7), buf)
+    var pos = 4
+    with assert_raises():
+        _ = decode_fixed32(Span(buf), pos)
+
+
+def test_bytes_sequential() raises:
+    # Two length-delimited fields back to back; pos must land between them.
+    var p1: List[Byte] = [Byte(10), Byte(20)]
+    var p2: List[Byte] = [Byte(30)]
+    var buf = List[Byte]()
+    encode_bytes(Span(p1), buf)
+    encode_bytes(Span(p2), buf)
+    var pos = 0
+    var v1 = decode_bytes(Span(buf), pos)
+    assert_equal(len(v1), 2)
+    assert_equal(v1[0], Byte(10))
+    var v2 = decode_bytes(Span(buf), pos)
+    assert_equal(len(v2), 1)
+    assert_equal(v2[0], Byte(30))
+    assert_equal(pos, len(buf))
+
+
+def test_bytes_multibyte_length() raises:
+    # 200-byte payload -> 2-byte length varint (0xC8 0x01).
+    var payload = List[Byte]()
+    for i in range(200):
+        payload.append(Byte(i & 0xFF))
+    var buf = List[Byte]()
+    encode_bytes(Span(payload), buf)
+    assert_equal(buf[0], Byte(0xC8))
+    assert_equal(buf[1], Byte(0x01))
+    assert_equal(len(buf), 202)
+    var pos = 0
+    var view = decode_bytes(Span(buf), pos)
+    assert_equal(len(view), 200)
+    assert_equal(view[199], Byte(199))
+    assert_equal(pos, 202)
+
+
+def test_fixed32_float_bits() raises:
+    # A float's bit pattern survives a fixed32 round-trip.
+    var f = Float32(3.14)
+    var buf = List[Byte]()
+    encode_fixed32(f.to_bits[DType.uint32](), buf)
+    var pos = 0
+    assert_equal(decode_fixed32(Span(buf), pos), f.to_bits[DType.uint32]())
+
+
+def test_fixed64_double_bits() raises:
+    var d = Float64(3.141592653589793)
+    var buf = List[Byte]()
+    encode_fixed64(d.to_bits[DType.uint64](), buf)
+    var pos = 0
+    assert_equal(decode_fixed64(Span(buf), pos), d.to_bits[DType.uint64]())
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
