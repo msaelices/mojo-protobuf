@@ -135,3 +135,126 @@ def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
     """
     var key = decode_varint(data, pos)
     return (Int(key >> 3), Int(key & 0x7))
+
+
+# ===-----------------------------------------------------------------------===#
+# Fixed-width values (WIRE_I32 / WIRE_I64)
+# ===-----------------------------------------------------------------------===#
+
+
+def encode_fixed32(value: UInt32, mut out: List[Byte]):
+    """Appends a 32-bit value as 4 little-endian bytes (`WIRE_I32`).
+
+    Args:
+        value: The value to encode (fixed32/sfixed32, or a bit-cast float).
+        out: The byte buffer to append to.
+    """
+    var v = value
+    for _ in range(4):
+        out.append(Byte(v))  # Byte() truncates to the low 8 bits
+        v >>= 8
+
+
+def decode_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
+    """Reads 4 little-endian bytes from `data` at `pos`, advancing `pos`.
+
+    Args:
+        data: The byte view to read from.
+        pos: The current read offset; advanced by 4.
+
+    Returns:
+        The decoded 32-bit value.
+
+    Raises:
+        If fewer than 4 bytes remain.
+    """
+    if pos + 4 > len(data):
+        raise Error("decode_fixed32: truncated input")
+    var r = (
+        UInt32(data[pos])
+        | (UInt32(data[pos + 1]) << 8)
+        | (UInt32(data[pos + 2]) << 16)
+        | (UInt32(data[pos + 3]) << 24)
+    )
+    pos += 4
+    return r
+
+
+def encode_fixed64(value: UInt64, mut out: List[Byte]):
+    """Appends a 64-bit value as 8 little-endian bytes (`WIRE_I64`).
+
+    Args:
+        value: The value to encode (fixed64/sfixed64, or a bit-cast double).
+        out: The byte buffer to append to.
+    """
+    var v = value
+    for _ in range(8):
+        out.append(Byte(v))
+        v >>= 8
+
+
+def decode_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
+    """Reads 8 little-endian bytes from `data` at `pos`, advancing `pos`.
+
+    Args:
+        data: The byte view to read from.
+        pos: The current read offset; advanced by 8.
+
+    Returns:
+        The decoded 64-bit value.
+
+    Raises:
+        If fewer than 8 bytes remain.
+    """
+    if pos + 8 > len(data):
+        raise Error("decode_fixed64: truncated input")
+    var r: UInt64 = 0
+    for i in range(8):
+        r |= UInt64(data[pos + i]) << (UInt64(i) * 8)
+    pos += 8
+    return r
+
+
+# ===-----------------------------------------------------------------------===#
+# Length-delimited values (WIRE_LEN)
+# ===-----------------------------------------------------------------------===#
+
+
+def encode_bytes(data: Span[Byte, _], mut out: List[Byte]):
+    """Appends a length-delimited field: a varint length, then the bytes.
+
+    Used for `bytes`, `string`, embedded messages, and packed repeated fields.
+
+    Args:
+        data: The payload bytes.
+        out: The byte buffer to append to.
+    """
+    encode_varint(UInt64(len(data)), out)
+    out.extend(data)
+
+
+def decode_bytes(
+    data: Span[Byte, _], mut pos: Int
+) raises -> Span[Byte, data.origin]:
+    """Reads a length-delimited field, returning a view into `data`.
+
+    The returned span borrows `data`; no bytes are copied.
+
+    Args:
+        data: The byte view to read from.
+        pos: The current read offset; advanced past the length and payload.
+
+    Returns:
+        A view of the payload bytes.
+
+    Raises:
+        If the length prefix is malformed or exceeds the remaining buffer.
+    """
+    var length64 = decode_varint(data, pos)
+    var remaining = len(data) - pos
+    if length64 > UInt64(remaining):
+        raise Error("decode_bytes: length exceeds buffer")
+    var length = Int(length64)
+    var start = pos
+    pos += length
+    return data[start : start + length]

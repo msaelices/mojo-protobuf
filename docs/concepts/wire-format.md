@@ -91,15 +91,17 @@ them* — without it, a decoder couldn't skip past an unknown field:
 | Varint | `encode_varint`, `decode_varint` |
 | ZigZag | `zigzag_encode`, `zigzag_decode` |
 | Tags / wire types | `encode_tag`, `decode_tag`, `WIRE_*` constants |
+| Fixed 32/64 | `encode_fixed32`/`64`, `decode_fixed32`/`64` |
+| Length-delimited | `encode_bytes`, `decode_bytes` |
 
 ## Implementation status
 
 | Layer | Status |
 |---|---|
 | Varint, ZigZag, tags | ✅ implemented |
-| `WIRE_LEN` value codec (length-prefixed bytes/strings/sub-messages) | ⏳ next |
-| `WIRE_I32` / `WIRE_I64` value codecs (fixed-width) | ⏳ next |
-| Message API (typed structs, full encode/decode) | 🔜 later |
+| `WIRE_I32` / `WIRE_I64` value codecs (`encode_fixed32`/`64`, `decode_fixed32`/`64`) | ✅ implemented |
+| `WIRE_LEN` value codec (`encode_bytes`/`decode_bytes`, length-prefixed; zero-copy view on decode) | ✅ implemented |
+| Message API (typed structs, full encode/decode) | ⏳ next |
 | `.proto` → Mojo code generation | 🔜 later |
 
 ## How to review code that uses this
