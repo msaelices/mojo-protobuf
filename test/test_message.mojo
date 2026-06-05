@@ -6,6 +6,7 @@ from protobuf.fields import (
     read_string,
     skip_field,
     write_bool,
+    write_bytes,
     write_fixed32,
     write_int64,
     write_string,
@@ -265,6 +266,71 @@ def test_reflection_int32_fields() raises:
 
     var u = decode[Nums32](Span(encode(Nums32(0, UInt32.MAX))))
     assert_equal(u.b, UInt32.MAX)
+
+
+@fieldwise_init
+struct Blob(Message):
+    var id: Int64
+    var data: List[Byte]
+
+    def __init__(out self):
+        self.id = 0
+        self.data = List[Byte]()
+
+
+def test_reflection_bytes_field() raises:
+    var payload: List[Byte] = [Byte(0x00), Byte(0xFF), Byte(0x10)]  # binary
+    var b = Blob(7, payload.copy())
+    var bytes = encode(b)
+    assert_equal(len(bytes), b.encoded_size())
+    var got = decode[Blob](Span(bytes))
+    assert_equal(got.id, 7)
+    assert_equal(len(got.data), 3)
+    assert_equal(got.data[0], Byte(0x00))
+    assert_equal(got.data[1], Byte(0xFF))
+
+
+def test_reflection_bytes_empty() raises:
+    var got = decode[Blob](Span(encode(Blob())))
+    assert_equal(len(got.data), 0)
+
+
+def test_reflection_bytes_owns_its_data() raises:
+    # The decoded field must own a copy, not a view into the input buffer.
+    var payload: List[Byte] = [Byte(1), Byte(2), Byte(3)]
+    var buf = encode(Blob(0, payload.copy()))
+    var got = decode[Blob](Span(buf))
+    for i in range(len(buf)):  # clobber the source bytes
+        buf[i] = Byte(0)
+    assert_equal(len(got.data), 3)
+    assert_equal(got.data[0], Byte(1))
+    assert_equal(got.data[2], Byte(3))
+
+
+def test_reflection_bytes_large() raises:
+    # A >= 128-byte payload exercises the 2-byte length prefix.
+    var payload = List[Byte]()
+    for i in range(200):
+        payload.append(Byte(i & 0xFF))
+    var b = Blob(0, payload.copy())
+    var bytes = encode(b)
+    assert_equal(len(bytes), b.encoded_size())
+    var got = decode[Blob](Span(bytes))
+    assert_equal(len(got.data), 200)
+    assert_equal(got.data[199], Byte(199))
+
+
+def test_reflection_bytes_last_wins() raises:
+    # A repeated bytes field must drop the prior List (move-assign) and keep the
+    # last value.
+    var buf = List[Byte]()
+    var first: List[Byte] = [Byte(1)]
+    var second: List[Byte] = [Byte(2), Byte(3)]
+    write_bytes(2, Span(first), buf)  # Blob.data is field 2
+    write_bytes(2, Span(second), buf)
+    var got = decode[Blob](Span(buf))
+    assert_equal(len(got.data), 2)
+    assert_equal(got.data[0], Byte(2))
 
 
 def main() raises:
