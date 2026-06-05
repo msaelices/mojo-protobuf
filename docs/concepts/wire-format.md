@@ -1,8 +1,5 @@
 # The protobuf wire format
 
-*Audience: you program, but you don't (yet) know protobuf. No prior knowledge
-assumed.*
-
 Protocol Buffers ("protobuf") is a binary format for serializing structured
 data. This page explains the **lowest layer** — how individual bytes encode
 values. It's the foundation everything else is built on, and it's almost all
