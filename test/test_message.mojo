@@ -58,6 +58,22 @@ struct Person(Message):
             skip_field(data, pos, wire_type)
 
 
+# `Contact` writes no serialization methods: it uses the reflection-derived
+# defaults from the `Message` trait (field number = 1-based field position).
+@fieldwise_init
+struct Contact(Message):
+    var id: Int64
+    var email: String
+    var verified: Bool
+    var score: UInt64
+
+    def __init__(out self):
+        self.id = 0
+        self.email = String("")
+        self.verified = False
+        self.score = 0
+
+
 def test_person_roundtrip() raises:
     var bytes = encode(Person(-5, "héllo", True))
     var got = decode[Person](Span(bytes))
@@ -133,6 +149,26 @@ def test_encode_reserves_exactly() raises:
     var bytes = encode(p)
     assert_equal(bytes.capacity, p.encoded_size())
     assert_equal(bytes.capacity, len(bytes))
+
+
+def test_reflection_default_roundtrip() raises:
+    # Contact has no serialization methods; everything comes from reflection.
+    var c = Contact(7, "a@b.co", True, 99)
+    var bytes = encode(c)
+    assert_equal(len(bytes), c.encoded_size())
+    var got = decode[Contact](Span(bytes))
+    assert_equal(got.id, 7)
+    assert_equal(got.email, "a@b.co")
+    assert_equal(got.verified, True)
+    assert_equal(got.score, 99)
+
+
+def test_reflection_default_from_empty() raises:
+    var got = decode[Contact](Span(List[Byte]()))
+    assert_equal(got.id, 0)
+    assert_equal(got.email, "")
+    assert_equal(got.verified, False)
+    assert_equal(got.score, 0)
 
 
 def main() raises:
