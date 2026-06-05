@@ -4,11 +4,13 @@ from protobuf import VERSION
 from protobuf.wire import (
     WIRE_LEN,
     decode_bytes,
+    decode_fixed,
     decode_fixed32,
     decode_fixed64,
     decode_tag,
     decode_varint,
     encode_bytes,
+    encode_fixed,
     encode_fixed32,
     encode_fixed64,
     encode_tag,
@@ -258,6 +260,22 @@ def test_fixed64_double_bits() raises:
     encode_fixed64(d.to_bits[DType.uint64](), buf)
     var pos = 0
     assert_equal(decode_fixed64(Span(buf), pos), d.to_bits[DType.uint64]())
+
+
+def test_encode_fixed_generic() raises:
+    # The generic codec the fixed32/64 wrappers and float/double build on.
+    var b32 = List[Byte]()
+    encode_fixed[DType.float32](Float32(1.0), b32)
+    assert_equal(len(b32), 4)
+    assert_equal(b32[3], Byte(0x3F))  # 1.0f LE -> 00 00 80 3F
+    var p32 = 0
+    assert_equal(decode_fixed[DType.float32](Span(b32), p32), Float32(1.0))
+
+    var b64 = List[Byte]()
+    encode_fixed[DType.uint64](UInt64.MAX, b64)
+    assert_equal(len(b64), 8)
+    var p64 = 0
+    assert_equal(decode_fixed[DType.uint64](Span(b64), p64), UInt64.MAX)
 
 
 def main() raises:
