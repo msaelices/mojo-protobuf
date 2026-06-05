@@ -73,5 +73,50 @@ def test_tag() raises:
     assert_equal(wtype, WIRE_LEN)
 
 
+def test_varint_max_is_10_bytes() raises:
+    var buf = List[Byte]()
+    encode_varint(UInt64.MAX, buf)
+    assert_equal(len(buf), 10)
+
+
+def test_varint_overlong_raises() raises:
+    # 10 continuation bytes: the loop passes 64 bits without terminating.
+    var data: List[Byte] = [
+        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80),
+        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80),
+    ]
+    var pos = 0
+    with assert_raises():
+        _ = decode_varint(Span(data), pos)
+
+
+def test_varint_stops_midbuffer() raises:
+    # Decoding one value must leave `pos` at the next field's first byte.
+    var data: List[Byte] = [Byte(0x01), Byte(0xFF)]
+    var pos = 0
+    var got = decode_varint(Span(data), pos)
+    assert_equal(got, 1)
+    assert_equal(pos, 1)
+
+
+def test_varint_noncanonical_10th_byte() raises:
+    # Lenient: high bits in the 10th byte are masked (see decode_varint notes).
+    # 9 zero-payload bytes then 0x7F -> 0x7F << 63.
+    var data: List[Byte] = [
+        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80),
+        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x7F),
+    ]
+    var pos = 0
+    var got = decode_varint(Span(data), pos)
+    assert_equal(got, UInt64(0x8000000000000000))
+
+
+def test_decode_tag_truncated_raises() raises:
+    var data: List[Byte] = [Byte(0x80)]  # truncated varint
+    var pos = 0
+    with assert_raises():
+        _ = decode_tag(Span(data), pos)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
