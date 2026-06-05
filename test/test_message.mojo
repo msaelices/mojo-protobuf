@@ -235,7 +235,10 @@ struct Vec3(Message):
 
 
 def test_reflection_float_fields() raises:
-    var got = decode[Vec3](Span(encode(Vec3(3.14, -2.5))))
+    var v = Vec3(3.14, -2.5)
+    var bytes = encode(v)
+    assert_equal(len(bytes), v.encoded_size())  # float arms agree on size
+    var got = decode[Vec3](Span(bytes))
     assert_equal(got.x, Float32(3.14))
     assert_equal(got.y, Float64(-2.5))
 
