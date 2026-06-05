@@ -26,18 +26,18 @@ while pos < len(data):
 ```
 """
 
-from std.memory import bitcast
-
 from protobuf.wire import (
     WIRE_I32,
     WIRE_I64,
     WIRE_LEN,
     WIRE_VARINT,
     decode_bytes,
+    decode_fixed,
     decode_fixed32,
     decode_fixed64,
     decode_varint,
     encode_bytes,
+    encode_fixed,
     encode_fixed32,
     encode_fixed64,
     encode_tag,
@@ -97,13 +97,13 @@ def write_fixed64(field_number: Int, value: UInt64, mut output: List[Byte]):
 def write_float(field_number: Int, value: Float32, mut output: List[Byte]):
     """Writes a `float` field (4 little-endian bytes of its IEEE-754 bits)."""
     encode_tag(field_number, WIRE_I32, output)
-    encode_fixed32(value.to_bits[DType.uint32](), output)
+    encode_fixed[DType.float32](value, output)
 
 
 def write_double(field_number: Int, value: Float64, mut output: List[Byte]):
     """Writes a `double` field (8 little-endian bytes of its IEEE-754 bits)."""
     encode_tag(field_number, WIRE_I64, output)
-    encode_fixed64(value.to_bits[DType.uint64](), output)
+    encode_fixed[DType.float64](value, output)
 
 
 def write_bytes(field_number: Int, value: Span[Byte, _], mut output: List[Byte]):
@@ -183,7 +183,7 @@ def read_float(data: Span[Byte, _], mut pos: Int) raises -> Float32:
     Raises:
         If fewer than 4 bytes remain.
     """
-    return bitcast[DType.float32](decode_fixed32(data, pos))
+    return decode_fixed[DType.float32](data, pos)
 
 
 def read_double(data: Span[Byte, _], mut pos: Int) raises -> Float64:
@@ -192,7 +192,7 @@ def read_double(data: Span[Byte, _], mut pos: Int) raises -> Float64:
     Raises:
         If fewer than 8 bytes remain.
     """
-    return bitcast[DType.float64](decode_fixed64(data, pos))
+    return decode_fixed[DType.float64](data, pos)
 
 
 def read_bytes(
