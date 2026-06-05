@@ -8,6 +8,9 @@ ZigZag signed encoding, and field tags.
 See <https://protobuf.dev/programming-guides/encoding/>.
 """
 
+from std.memory import bitcast
+from std.sys import bit_width_of
+
 # Wire types (the low 3 bits of a field tag).
 comptime WIRE_VARINT = 0
 """int32/int64/uint32/uint64/sint32/sint64/bool/enum."""
@@ -142,77 +145,74 @@ def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-def encode_fixed32(value: UInt32, mut output: List[Byte]):
-    """Appends a 32-bit value as 4 little-endian bytes (`WIRE_I32`).
+def encode_fixed[
+    dtype: DType
+](value: Scalar[dtype], mut output: List[Byte]):
+    """Appends `value`'s bits as little-endian bytes, one per 8 bits of `dtype`.
+
+    For protobuf this is used at widths 4 (`fixed32`/`sfixed32`/`float`) and 8
+    (`fixed64`/`sfixed64`/`double`), but it works for any `dtype`.
+
+    Parameters:
+        dtype: The element type (its bit width sets the byte count).
 
     Args:
-        value: The value to encode (fixed32/sfixed32, or a bit-cast float).
+        value: The value to encode.
         output: The byte buffer to append to.
     """
-    var v = value
-    for _ in range(4):
-        output.append(Byte(v))  # Byte() truncates to the low 8 bits
-        v >>= 8
+    var bits = value.to_bits()
+    comptime BitsType = type_of(bits)
+    comptime for i in range(bit_width_of[dtype]() // 8):
+        output.append(Byte(bits >> BitsType(i * 8)))
+
+
+def decode_fixed[
+    dtype: DType
+](data: Span[Byte, _], mut pos: Int) raises -> Scalar[dtype]:
+    """Reads little-endian fixed-width bytes into a `Scalar[dtype]`.
+
+    Parameters:
+        dtype: The element type to decode (its bit width sets the byte count).
+
+    Args:
+        data: The byte view to read from.
+        pos: The current read offset; advanced by the type's byte width.
+
+    Returns:
+        The decoded value.
+
+    Raises:
+        If fewer than the type's byte width remain.
+    """
+    comptime nbytes = bit_width_of[dtype]() // 8
+    if pos + nbytes > len(data):
+        raise Error("decode_fixed: truncated input")
+    comptime BitsType = type_of(Scalar[dtype](0).to_bits())
+    var bits = BitsType(0)
+    comptime for i in range(nbytes):
+        bits |= BitsType(data[pos + i]) << BitsType(i * 8)
+    pos += nbytes
+    return bitcast[dtype](bits)
+
+
+def encode_fixed32(value: UInt32, mut output: List[Byte]):
+    """Appends a 32-bit value as 4 little-endian bytes (`WIRE_I32`)."""
+    encode_fixed[DType.uint32](value, output)
 
 
 def decode_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
-    """Reads 4 little-endian bytes from `data` at `pos`, advancing `pos`.
-
-    Args:
-        data: The byte view to read from.
-        pos: The current read offset; advanced by 4.
-
-    Returns:
-        The decoded 32-bit value.
-
-    Raises:
-        If fewer than 4 bytes remain.
-    """
-    if pos + 4 > len(data):
-        raise Error("decode_fixed32: truncated input")
-    var r = (
-        UInt32(data[pos])
-        | (UInt32(data[pos + 1]) << 8)
-        | (UInt32(data[pos + 2]) << 16)
-        | (UInt32(data[pos + 3]) << 24)
-    )
-    pos += 4
-    return r
+    """Reads 4 little-endian bytes (`WIRE_I32`); raises if fewer than 4 remain."""
+    return decode_fixed[DType.uint32](data, pos)
 
 
 def encode_fixed64(value: UInt64, mut output: List[Byte]):
-    """Appends a 64-bit value as 8 little-endian bytes (`WIRE_I64`).
-
-    Args:
-        value: The value to encode (fixed64/sfixed64, or a bit-cast double).
-        output: The byte buffer to append to.
-    """
-    var v = value
-    for _ in range(8):
-        output.append(Byte(v))
-        v >>= 8
+    """Appends a 64-bit value as 8 little-endian bytes (`WIRE_I64`)."""
+    encode_fixed[DType.uint64](value, output)
 
 
 def decode_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
-    """Reads 8 little-endian bytes from `data` at `pos`, advancing `pos`.
-
-    Args:
-        data: The byte view to read from.
-        pos: The current read offset; advanced by 8.
-
-    Returns:
-        The decoded 64-bit value.
-
-    Raises:
-        If fewer than 8 bytes remain.
-    """
-    if pos + 8 > len(data):
-        raise Error("decode_fixed64: truncated input")
-    var r: UInt64 = 0
-    for i in range(8):
-        r |= UInt64(data[pos + i]) << (UInt64(i) * 8)
-    pos += 8
-    return r
+    """Reads 8 little-endian bytes (`WIRE_I64`); raises if fewer than 8 remain."""
+    return decode_fixed[DType.uint64](data, pos)
 
 
 # ===-----------------------------------------------------------------------===#

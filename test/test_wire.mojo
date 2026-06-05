@@ -4,11 +4,13 @@ from protobuf import VERSION
 from protobuf.wire import (
     WIRE_LEN,
     decode_bytes,
+    decode_fixed,
     decode_fixed32,
     decode_fixed64,
     decode_tag,
     decode_varint,
     encode_bytes,
+    encode_fixed,
     encode_fixed32,
     encode_fixed64,
     encode_tag,
@@ -258,6 +260,40 @@ def test_fixed64_double_bits() raises:
     encode_fixed64(d.to_bits[DType.uint64](), buf)
     var pos = 0
     assert_equal(decode_fixed64(Span(buf), pos), d.to_bits[DType.uint64]())
+
+
+def test_encode_fixed_generic() raises:
+    # The generic codec the fixed32/64 wrappers and float/double build on.
+    var b32 = List[Byte]()
+    encode_fixed[DType.float32](Float32(1.0), b32)
+    assert_equal(len(b32), 4)
+    assert_equal(b32[3], Byte(0x3F))  # 1.0f LE -> 00 00 80 3F
+    var p32 = 0
+    assert_equal(decode_fixed[DType.float32](Span(b32), p32), Float32(1.0))
+
+    var b64 = List[Byte]()
+    encode_fixed[DType.uint64](UInt64.MAX, b64)
+    assert_equal(len(b64), 8)
+    var p64 = 0
+    assert_equal(decode_fixed[DType.uint64](Span(b64), p64), UInt64.MAX)
+
+    # Direct float64 and uint32 generic paths.
+    var b64f = List[Byte]()
+    encode_fixed[DType.float64](Float64(2.5), b64f)
+    var p64f = 0
+    assert_equal(decode_fixed[DType.float64](Span(b64f), p64f), Float64(2.5))
+
+    var b32u = List[Byte]()
+    encode_fixed[DType.uint32](UInt32(0x12345678), b32u)
+    var p32u = 0
+    assert_equal(decode_fixed[DType.uint32](Span(b32u), p32u), UInt32(0x12345678))
+
+    # An off-power width (not used by protobuf) proves it is width-generic.
+    var b16 = List[Byte]()
+    encode_fixed[DType.uint16](UInt16(0xABCD), b16)
+    assert_equal(len(b16), 2)
+    var p16 = 0
+    assert_equal(decode_fixed[DType.uint16](Span(b16), p16), UInt16(0xABCD))
 
 
 def main() raises:
