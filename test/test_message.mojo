@@ -210,5 +210,19 @@ def test_reflection_field_order_is_positional() raises:
     assert_equal(got.n, 42)
 
 
+# A plain machine-width `Int` field (not `Int64`) is supported too.
+@fieldwise_init
+struct Counter(Message):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
+def test_reflection_int_field() raises:
+    var got = decode[Counter](Span(encode(Counter(-123456))))
+    assert_equal(got.value, -123456)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
