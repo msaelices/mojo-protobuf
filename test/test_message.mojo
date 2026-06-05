@@ -6,6 +6,7 @@ from protobuf.fields import (
     read_string,
     skip_field,
     write_bool,
+    write_fixed32,
     write_int64,
     write_string,
 )
@@ -84,6 +85,32 @@ def test_person_skips_unknown_field() raises:
     assert_equal(got.id, 42)
     assert_equal(got.active, True)
     assert_equal(got.name, "")
+
+
+def test_person_skips_unknown_fixed_field() raises:
+    # Unknown field with a fixed (I32) wire type exercises that skip branch.
+    var buf = List[Byte]()
+    write_fixed32(8, 0xDEADBEEF, buf)  # unknown I32 field
+    write_int64(1, 5, buf)
+    var got = decode[Person](Span(buf))
+    assert_equal(got.id, 5)
+
+
+def test_person_last_field_wins() raises:
+    # A repeated scalar: the last occurrence overwrites (proto3 semantics).
+    var buf = List[Byte]()
+    write_int64(1, 10, buf)
+    write_int64(1, 20, buf)
+    var got = decode[Person](Span(buf))
+    assert_equal(got.id, 20)
+
+
+def test_person_reencode_is_stable() raises:
+    var first = encode(Person(7, "ada", False))
+    var second = encode(decode[Person](Span(first)))
+    assert_equal(len(first), len(second))
+    for i in range(len(first)):
+        assert_equal(first[i], second[i])
 
 
 def main() raises:
