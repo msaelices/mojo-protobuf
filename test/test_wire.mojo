@@ -3,8 +3,14 @@ from std.testing import assert_equal, assert_raises, TestSuite
 from protobuf import VERSION
 from protobuf.wire import (
     WIRE_LEN,
+    decode_bytes,
+    decode_fixed32,
+    decode_fixed64,
     decode_tag,
     decode_varint,
+    encode_bytes,
+    encode_fixed32,
+    encode_fixed64,
     encode_tag,
     encode_varint,
     zigzag_decode,
@@ -116,6 +122,75 @@ def test_decode_tag_truncated_raises() raises:
     var pos = 0
     with assert_raises():
         _ = decode_tag(Span(data), pos)
+
+
+def test_fixed32_roundtrip() raises:
+    var vals: List[UInt32] = [0, 1, 0x12345678, UInt32.MAX]
+    for v in vals:
+        var buf = List[Byte]()
+        encode_fixed32(v, buf)
+        assert_equal(len(buf), 4)
+        var pos = 0
+        assert_equal(decode_fixed32(Span(buf), pos), v)
+        assert_equal(pos, 4)
+
+
+def test_fixed32_little_endian() raises:
+    var buf = List[Byte]()
+    encode_fixed32(0x12345678, buf)
+    assert_equal(buf[0], Byte(0x78))
+    assert_equal(buf[3], Byte(0x12))
+
+
+def test_fixed64_roundtrip() raises:
+    var vals: List[UInt64] = [0, 1, 0x123456789ABCDEF0, UInt64.MAX]
+    for v in vals:
+        var buf = List[Byte]()
+        encode_fixed64(v, buf)
+        assert_equal(len(buf), 8)
+        var pos = 0
+        assert_equal(decode_fixed64(Span(buf), pos), v)
+        assert_equal(pos, 8)
+
+
+def test_fixed32_truncated_raises() raises:
+    var short: List[Byte] = [Byte(1), Byte(2)]
+    var pos = 0
+    with assert_raises():
+        _ = decode_fixed32(Span(short), pos)
+
+
+def test_bytes_roundtrip() raises:
+    var payload: List[Byte] = [Byte(10), Byte(20), Byte(30)]
+    var buf = List[Byte]()
+    encode_bytes(Span(payload), buf)
+    assert_equal(buf[0], Byte(3))  # length prefix
+    assert_equal(len(buf), 4)
+    var pos = 0
+    var view = decode_bytes(Span(buf), pos)
+    assert_equal(len(view), 3)
+    assert_equal(view[0], Byte(10))
+    assert_equal(view[2], Byte(30))
+    assert_equal(pos, 4)
+
+
+def test_bytes_empty() raises:
+    var empty = List[Byte]()
+    var buf = List[Byte]()
+    encode_bytes(Span(empty), buf)
+    assert_equal(len(buf), 1)
+    assert_equal(buf[0], Byte(0))
+    var pos = 0
+    var view = decode_bytes(Span(buf), pos)
+    assert_equal(len(view), 0)
+    assert_equal(pos, 1)
+
+
+def test_bytes_length_exceeds_buffer_raises() raises:
+    var data: List[Byte] = [Byte(5), Byte(1), Byte(2)]  # claims 5, has 2
+    var pos = 0
+    with assert_raises():
+        _ = decode_bytes(Span(data), pos)
 
 
 def main() raises:
