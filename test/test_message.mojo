@@ -267,5 +267,32 @@ def test_reflection_int32_fields() raises:
     assert_equal(u.b, UInt32.MAX)
 
 
+@fieldwise_init
+struct Blob(Message):
+    var id: Int64
+    var data: List[Byte]
+
+    def __init__(out self):
+        self.id = 0
+        self.data = List[Byte]()
+
+
+def test_reflection_bytes_field() raises:
+    var payload: List[Byte] = [Byte(0x00), Byte(0xFF), Byte(0x10)]  # binary
+    var b = Blob(7, payload.copy())
+    var bytes = encode(b)
+    assert_equal(len(bytes), b.encoded_size())
+    var got = decode[Blob](Span(bytes))
+    assert_equal(got.id, 7)
+    assert_equal(len(got.data), 3)
+    assert_equal(got.data[0], Byte(0x00))
+    assert_equal(got.data[1], Byte(0xFF))
+
+
+def test_reflection_bytes_empty() raises:
+    var got = decode[Blob](Span(encode(Blob())))
+    assert_equal(len(got.data), 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
