@@ -50,6 +50,11 @@ def decode_varint(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
 
     Raises:
         If the input ends mid-varint, or the varint exceeds 64 bits.
+
+    Notes:
+        Like the reference C++/Go decoders, a non-canonical 10th byte (payload
+        bits above bit 63) is accepted leniently: the extra bits are masked off
+        rather than rejected.
     """
     var result: UInt64 = 0
     var shift: UInt64 = 0
@@ -95,10 +100,18 @@ def encode_tag(field_number: Int, wire_type: Int, mut out: List[Byte]):
     """Appends a field tag (`field_number << 3 | wire_type`) as a varint.
 
     Args:
-        field_number: The field number.
+        field_number: The field number (1 to 2^29-1).
         wire_type: One of the `WIRE_*` constants.
         out: The byte buffer to append to.
     """
+    assert field_number >= 1, "encode_tag: field_number must be >= 1"
+    assert field_number <= 0x1FFFFFFF, "encode_tag: field_number exceeds 2^29-1"
+    assert (
+        wire_type == WIRE_VARINT
+        or wire_type == WIRE_I64
+        or wire_type == WIRE_LEN
+        or wire_type == WIRE_I32
+    ), "encode_tag: invalid wire_type"
     encode_varint(UInt64((field_number << 3) | wire_type), out)
 
 
@@ -114,6 +127,11 @@ def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
 
     Raises:
         If the underlying varint is malformed.
+
+    Notes:
+        This only splits the tag bits; it does not validate that `wire_type` is
+        a known value or that `field_number` is legal. Those checks belong to
+        the value-reading layer (which rejects wire types 3/4/6/7).
     """
     var key = decode_varint(data, pos)
     return (Int(key >> 3), Int(key & 0x7))
