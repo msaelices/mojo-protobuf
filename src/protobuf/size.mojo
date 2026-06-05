@@ -27,6 +27,8 @@ def varint_size(value: UInt64) -> Int:
 
 def tag_size(field_number: Int) -> Int:
     """Returns the byte size of a field tag for `field_number`."""
+    assert field_number >= 1, "tag_size: field_number must be >= 1"
+    assert field_number <= 0x1FFFFFFF, "tag_size: field_number exceeds 2^29-1"
     return varint_size(UInt64(field_number) << 3)
 
 
