@@ -13,6 +13,7 @@ from protobuf.fields import (
 from protobuf.message import Message, decode, encode
 
 
+@fieldwise_init
 struct Person(Message):
     var id: Int64
     var name: String
@@ -22,11 +23,6 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
         self.active = False
-
-    def __init__(out self, id: Int64, name: String, active: Bool):
-        self.id = id
-        self.name = name
-        self.active = active
 
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)

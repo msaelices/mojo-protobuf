@@ -13,17 +13,14 @@ loop, calling `merge_field` for each field. This is the contract a future
 `protoc` code generator will emit for each message.
 
 ```mojo
+@fieldwise_init
 struct Person(Message):
     var id: Int64
     var name: String
 
-    def __init__(out self):
+    def __init__(out self):  # default-constructible, for decode()
         self.id = 0
         self.name = String("")
-
-    def __init__(out self, id: Int64, name: String):
-        self.id = id
-        self.name = name
 
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)

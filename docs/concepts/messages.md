@@ -78,6 +78,7 @@ and `merge_field` (read or skip one field) — and the generic `encode`/`decode`
 functions drive the rest:
 
 ```mojo
+@fieldwise_init
 struct Person(Message):
     var id: Int64
     var name: String
@@ -85,10 +86,6 @@ struct Person(Message):
     def __init__(out self):  # default-constructible so decode() can build one
         self.id = 0
         self.name = String("")
-
-    def __init__(out self, id: Int64, name: String):
-        self.id = id
-        self.name = name
 
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)
