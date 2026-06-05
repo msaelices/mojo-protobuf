@@ -148,10 +148,10 @@ def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
 def encode_fixed[
     dtype: DType
 ](value: Scalar[dtype], mut output: List[Byte]):
-    """Appends `value` as little-endian fixed-width bytes (4 or 8).
+    """Appends `value`'s bits as little-endian bytes, one per 8 bits of `dtype`.
 
-    Works for `fixed32`/`fixed64`, `sfixed32`/`sfixed64`, `float`, and `double`:
-    the value's bits are emitted little-endian.
+    For protobuf this is used at widths 4 (`fixed32`/`sfixed32`/`float`) and 8
+    (`fixed64`/`sfixed64`/`double`), but it works for any `dtype`.
 
     Parameters:
         dtype: The element type (its bit width sets the byte count).
