@@ -70,8 +70,52 @@ message contains a field this decoder doesn't know (added by a newer schema),
 it — so old code keeps working against new data. `skip_field` is also where the
 illegal/deprecated wire types (groups `3`/`4`, and `6`/`7`) are rejected.
 
+## The `Message` trait
+
+`protobuf.message` wraps the field layer into a typed-message API. A message type
+conforms to `Message` by providing two methods — `encode_to` (write its fields)
+and `merge_field` (read or skip one field) — and the generic `encode`/`decode`
+functions drive the rest:
+
+```mojo
+@fieldwise_init
+struct Person(Message):
+    var id: Int64
+    var name: String
+
+    def __init__(out self):  # default-constructible so decode() can build one
+        self.id = 0
+        self.name = String("")
+
+    def encode_to(self, mut output: List[Byte]):
+        write_int64(1, self.id, output)
+        write_string(2, self.name, output)
+
+    def merge_field(
+        mut self, field_number: Int, wire_type: Int,
+        data: Span[Byte, _], mut pos: Int,
+    ) raises:
+        if field_number == 1:
+            self.id = read_int64(data, pos)
+        elif field_number == 2:
+            self.name = read_string(data, pos)
+        else:
+            skip_field(data, pos, wire_type)
+
+var bytes = encode(Person(id=1, name=String("ada")))
+var p = decode[Person](Span(bytes))
+```
+
+`decode` default-constructs the message, so fields absent from the wire keep
+their defaults — exactly protobuf's "missing field" semantics.
+
+This hand-written example keeps two things simple that the code generator will
+handle: it doesn't check that a known field's wire type matches (a mismatched
+tag would mis-decode), and it always serializes every field rather than omitting
+default-valued scalars as canonical proto3 does.
+
 ## What's next
 
-This field layer is the foundation a typed-message API and the `protoc` code
-generator will build on: generated code will simply call these `write_*`/
-`read_*` helpers inside per-message `encode`/`decode` methods.
+This is the contract the `protoc` code generator will emit: for each message in
+a `.proto` file it will produce a struct like `Person` above, calling the
+`write_*`/`read_*` helpers inside the generated `encode_to`/`merge_field`.

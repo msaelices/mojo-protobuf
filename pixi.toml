@@ -14,6 +14,7 @@ max = "*"
 [tasks]
 test-wire = "mojo run -I src test/test_wire.mojo"
 test-fields = "mojo run -I src test/test_fields.mojo"
+test-message = "mojo run -I src test/test_message.mojo"
 test-size = "mojo run -I src test/test_size.mojo"
-test = { depends-on = ["test-wire", "test-fields", "test-size"] }
+test = { depends-on = ["test-wire", "test-fields", "test-message", "test-size"] }
 format = "mojo format ./"
