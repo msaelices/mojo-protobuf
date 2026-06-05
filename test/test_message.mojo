@@ -224,5 +224,24 @@ def test_reflection_int_field() raises:
     assert_equal(got.value, -123456)
 
 
+@fieldwise_init
+struct Vec3(Message):
+    var x: Float32
+    var y: Float64
+
+    def __init__(out self):
+        self.x = 0.0
+        self.y = 0.0
+
+
+def test_reflection_float_fields() raises:
+    var v = Vec3(3.14, -2.5)
+    var bytes = encode(v)
+    assert_equal(len(bytes), v.encoded_size())  # float arms agree on size
+    var got = decode[Vec3](Span(bytes))
+    assert_equal(got.x, Float32(3.14))
+    assert_equal(got.y, Float64(-2.5))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

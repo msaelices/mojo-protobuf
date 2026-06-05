@@ -93,9 +93,9 @@ var p = decode[Person](Span(bytes))
 
 Reflection walks the struct's fields and serializes each by its type, assigning
 **field number = the field's 1-based position**. Supported field types are
-`Int`, `Int64`, `UInt64`, `Bool`, and `String` (the machine-width `Int` maps to
-an `int64` varint). Any other type is a compile error (unless you override the
-methods). `decode` default-constructs the message, so
+`Int`, `Int64`, `UInt64`, `Bool`, `String`, `Float32`, and `Float64` (the
+machine-width `Int` maps to an `int64` varint). Any other type is a compile
+error (unless you override the methods). `decode` default-constructs the message, so
 fields absent from the wire keep their defaults — protobuf's missing-field
 semantics — and `encode` reserves the buffer with `encoded_size()`, so it does
 zero reallocations (see [`protobuf.size`](wire-format.md)).

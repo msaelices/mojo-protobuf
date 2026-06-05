@@ -26,6 +26,8 @@ while pos < len(data):
 ```
 """
 
+from std.memory import bitcast
+
 from protobuf.wire import (
     WIRE_I32,
     WIRE_I64,
@@ -75,15 +77,33 @@ def write_bool(field_number: Int, value: Bool, mut output: List[Byte]):
 
 
 def write_fixed32(field_number: Int, value: UInt32, mut output: List[Byte]):
-    """Writes a `fixed32`/`sfixed32`/`float` field as 4 little-endian bytes."""
+    """Writes a `fixed32`/`sfixed32` field as 4 little-endian bytes.
+
+    For `float`, use `write_float`.
+    """
     encode_tag(field_number, WIRE_I32, output)
     encode_fixed32(value, output)
 
 
 def write_fixed64(field_number: Int, value: UInt64, mut output: List[Byte]):
-    """Writes a `fixed64`/`sfixed64`/`double` field as 8 little-endian bytes."""
+    """Writes a `fixed64`/`sfixed64` field as 8 little-endian bytes.
+
+    For `double`, use `write_double`.
+    """
     encode_tag(field_number, WIRE_I64, output)
     encode_fixed64(value, output)
+
+
+def write_float(field_number: Int, value: Float32, mut output: List[Byte]):
+    """Writes a `float` field (4 little-endian bytes of its IEEE-754 bits)."""
+    encode_tag(field_number, WIRE_I32, output)
+    encode_fixed32(value.to_bits[DType.uint32](), output)
+
+
+def write_double(field_number: Int, value: Float64, mut output: List[Byte]):
+    """Writes a `double` field (8 little-endian bytes of its IEEE-754 bits)."""
+    encode_tag(field_number, WIRE_I64, output)
+    encode_fixed64(value.to_bits[DType.uint64](), output)
 
 
 def write_bytes(field_number: Int, value: Span[Byte, _], mut output: List[Byte]):
@@ -155,6 +175,24 @@ def read_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
         If fewer than 8 bytes remain.
     """
     return decode_fixed64(data, pos)
+
+
+def read_float(data: Span[Byte, _], mut pos: Int) raises -> Float32:
+    """Reads a `float` value, 4 LE bytes (tag already consumed).
+
+    Raises:
+        If fewer than 4 bytes remain.
+    """
+    return bitcast[DType.float32](decode_fixed32(data, pos))
+
+
+def read_double(data: Span[Byte, _], mut pos: Int) raises -> Float64:
+    """Reads a `double` value, 8 LE bytes (tag already consumed).
+
+    Raises:
+        If fewer than 8 bytes remain.
+    """
+    return bitcast[DType.float64](decode_fixed64(data, pos))
 
 
 def read_bytes(
