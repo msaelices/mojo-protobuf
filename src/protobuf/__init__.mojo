@@ -7,8 +7,8 @@ This package is a work in progress. The planned surface area is:
 - Generated bindings for real schemas (e.g. `livekit/protocol`).
 
 So far the wire-format primitives are implemented (see `protobuf.wire`):
-varints, ZigZag, and field tags. Length-delimited and fixed-width value codecs,
-the message API, and code generation are still to come.
+varints, ZigZag, field tags, fixed-width values, and length-delimited values.
+The message API and code generation are still to come.
 """
 
 comptime VERSION = "0.1.0"
