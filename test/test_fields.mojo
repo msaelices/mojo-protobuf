@@ -4,8 +4,10 @@ from protobuf.wire import decode_tag
 from protobuf.fields import (
     read_bool,
     read_bytes,
+    read_double,
     read_fixed32,
     read_fixed64,
+    read_float,
     read_int64,
     read_sint64,
     read_string,
@@ -13,8 +15,10 @@ from protobuf.fields import (
     skip_field,
     write_bool,
     write_bytes,
+    write_double,
     write_fixed32,
     write_fixed64,
+    write_float,
     write_int64,
     write_sint64,
     write_string,
@@ -163,6 +167,26 @@ def test_varint_boundary_values() raises:
     _ = decode_tag(Span(output), pos)
     assert_equal(read_sint64(Span(output), pos), Int64.MIN)
     assert_equal(pos, len(output))
+
+
+def test_float_roundtrip() raises:
+    var buf = List[Byte]()
+    write_float(1, Float32(3.14), buf)
+    assert_equal(len(buf), 1 + 4)  # tag + fixed32
+    var pos = 0
+    var fnum, _ = decode_tag(Span(buf), pos)
+    assert_equal(fnum, 1)
+    assert_equal(read_float(Span(buf), pos), Float32(3.14))
+
+
+def test_double_roundtrip() raises:
+    var buf = List[Byte]()
+    write_double(2, Float64(-2.5), buf)
+    assert_equal(len(buf), 1 + 8)  # tag + fixed64
+    var pos = 0
+    var fnum, _ = decode_tag(Span(buf), pos)
+    assert_equal(fnum, 2)
+    assert_equal(read_double(Span(buf), pos), Float64(-2.5))
 
 
 def main() raises:
