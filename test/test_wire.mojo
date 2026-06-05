@@ -2,7 +2,6 @@ from std.testing import assert_equal, assert_raises, TestSuite
 
 from protobuf import VERSION
 from protobuf.wire import (
-    Byte,
     WIRE_LEN,
     decode_tag,
     decode_varint,

@@ -8,9 +8,6 @@ ZigZag signed encoding, and field tags.
 See <https://protobuf.dev/programming-guides/encoding/>.
 """
 
-comptime Byte = UInt8
-"""Convenience alias for a byte."""
-
 # Wire types (the low 3 bits of a field tag).
 comptime WIRE_VARINT = 0
 """int32/int64/uint32/uint64/sint32/sint64/bool/enum."""
