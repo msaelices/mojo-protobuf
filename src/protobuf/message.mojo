@@ -60,7 +60,9 @@ from protobuf.wire import decode_tag
 # `mymod.Bool`), so a same-named user type fails the `==` and falls through to
 # the unsupported-type guard rather than matching the wrong codec.
 comptime _INT_NAME = reflect[Int].name()
+comptime _INT32_NAME = reflect[Int32].name()
 comptime _INT64_NAME = reflect[Int64].name()
+comptime _UINT32_NAME = reflect[UInt32].name()
 comptime _UINT64_NAME = reflect[UInt64].name()
 comptime _BOOL_NAME = reflect[Bool].name()
 comptime _STRING_NAME = reflect[String].name()
@@ -74,10 +76,10 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
     The three methods have **default implementations driven by reflection**: a
     struct that conforms and is default-constructible gets `encode_to`,
     `merge_field`, and `encoded_size` for free, with **field number = the field's
-    1-based position**. Supported field types: `Int`, `Int64`, `UInt64`, `Bool`,
-    `String`, `Float32`, `Float64` (`Int`, the machine-width integer, maps to an
-    `int64` varint). Any other type is a compile error unless the methods are
-    overridden.
+    1-based position**. Supported field types: `Int`, `Int32`, `Int64`, `UInt32`,
+    `UInt64`, `Bool`, `String`, `Float32`, `Float64` (`Int`, the machine-width
+    integer, maps to an `int64` varint). Any other type is a compile error unless
+    the methods are overridden.
 
     Override the three methods for custom/non-sequential field numbers, types
     the reflection path doesn't cover, or proto3 niceties (wire-type validation
@@ -98,8 +100,12 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
             ref f = reflect[Self].field_ref[idx](self)
             comptime if name == _INT_NAME:
                 total += int64_field_size(idx + 1, Int64(rebind[Int](f)))
+            elif name == _INT32_NAME:
+                total += int64_field_size(idx + 1, Int64(rebind[Int32](f)))
             elif name == _INT64_NAME:
                 total += int64_field_size(idx + 1, rebind[Int64](f))
+            elif name == _UINT32_NAME:
+                total += uint64_field_size(idx + 1, UInt64(rebind[UInt32](f)))
             elif name == _UINT64_NAME:
                 total += uint64_field_size(idx + 1, rebind[UInt64](f))
             elif name == _BOOL_NAME:
@@ -122,8 +128,12 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
             ref f = reflect[Self].field_ref[idx](self)
             comptime if name == _INT_NAME:
                 write_int64(idx + 1, Int64(rebind[Int](f)), output)
+            elif name == _INT32_NAME:
+                write_int64(idx + 1, Int64(rebind[Int32](f)), output)
             elif name == _INT64_NAME:
                 write_int64(idx + 1, rebind[Int64](f), output)
+            elif name == _UINT32_NAME:
+                write_uint64(idx + 1, UInt64(rebind[UInt32](f)), output)
             elif name == _UINT64_NAME:
                 write_uint64(idx + 1, rebind[UInt64](f), output)
             elif name == _BOOL_NAME:
@@ -165,10 +175,18 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                     rebind[Int](
                         reflect[Self].field_ref[idx](self)
                     ) = Int(read_int64(data, pos))
+                elif name == _INT32_NAME:
+                    rebind[Int32](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Int32(read_int64(data, pos))
                 elif name == _INT64_NAME:
                     rebind[Int64](
                         reflect[Self].field_ref[idx](self)
                     ) = read_int64(data, pos)
+                elif name == _UINT32_NAME:
+                    rebind[UInt32](
+                        reflect[Self].field_ref[idx](self)
+                    ) = UInt32(read_uint64(data, pos))
                 elif name == _UINT64_NAME:
                     rebind[UInt64](
                         reflect[Self].field_ref[idx](self)
