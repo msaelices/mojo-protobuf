@@ -333,5 +333,54 @@ def test_reflection_bytes_last_wins() raises:
     assert_equal(got.data[0], Byte(2))
 
 
+@fieldwise_init
+struct Inner(Message):
+    var x: Int64
+    var label: String
+
+    def __init__(out self):
+        self.x = 0
+        self.label = String("")
+
+
+# `Outer` has a nested `Inner` field; both use the reflection defaults.
+@fieldwise_init
+struct Outer(Message):
+    var id: Int64
+    var inner: Inner
+
+    def __init__(out self):
+        self.id = 0
+        self.inner = Inner()
+
+
+def test_reflection_nested_roundtrip() raises:
+    var o = Outer(7, Inner(42, "hi"))
+    var bytes = encode(o)
+    assert_equal(len(bytes), o.encoded_size())  # nested size agrees
+    var got = decode[Outer](Span(bytes))
+    assert_equal(got.id, 7)
+    assert_equal(got.inner.x, 42)
+    assert_equal(got.inner.label, "hi")
+
+
+def test_reflection_nested_defaults() raises:
+    var got = decode[Outer](Span(List[Byte]()))
+    assert_equal(got.id, 0)
+    assert_equal(got.inner.x, 0)
+    assert_equal(got.inner.label, "")
+
+
+def test_reflection_nested_skips_unknown() raises:
+    var buf = List[Byte]()
+    write_string(9, "from a newer schema", buf)  # unknown to Outer
+    var sub = encode(Inner(5, "deep"))
+    write_bytes(2, Span(sub), buf)  # Outer.inner is field 2
+    var got = decode[Outer](Span(buf))
+    assert_equal(got.inner.x, 5)
+    assert_equal(got.inner.label, "deep")
+    assert_equal(got.id, 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
