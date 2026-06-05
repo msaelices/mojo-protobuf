@@ -277,6 +277,24 @@ def test_encode_fixed_generic() raises:
     var p64 = 0
     assert_equal(decode_fixed[DType.uint64](Span(b64), p64), UInt64.MAX)
 
+    # Direct float64 and uint32 generic paths.
+    var b64f = List[Byte]()
+    encode_fixed[DType.float64](Float64(2.5), b64f)
+    var p64f = 0
+    assert_equal(decode_fixed[DType.float64](Span(b64f), p64f), Float64(2.5))
+
+    var b32u = List[Byte]()
+    encode_fixed[DType.uint32](UInt32(0x12345678), b32u)
+    var p32u = 0
+    assert_equal(decode_fixed[DType.uint32](Span(b32u), p32u), UInt32(0x12345678))
+
+    # An off-power width (not used by protobuf) proves it is width-generic.
+    var b16 = List[Byte]()
+    encode_fixed[DType.uint16](UInt16(0xABCD), b16)
+    assert_equal(len(b16), 2)
+    var p16 = 0
+    assert_equal(decode_fixed[DType.uint16](Span(b16), p16), UInt16(0xABCD))
+
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
