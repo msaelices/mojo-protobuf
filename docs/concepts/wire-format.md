@@ -102,8 +102,8 @@ them* — without it, a decoder couldn't skip past an unknown field:
 | `WIRE_I32` / `WIRE_I64` value codecs (`encode_fixed32`/`64`, `decode_fixed32`/`64`) | ✅ implemented |
 | `WIRE_LEN` value codec (`encode_bytes`/`decode_bytes`, length-prefixed; zero-copy view on decode) | ✅ implemented |
 | Typed field layer (`protobuf.fields`: typed `write_*`/`read_*`, `skip_field`) | ✅ implemented |
-| Typed-message API (structs with generated `encode`/`decode`) | ⏳ next |
-| `.proto` → Mojo code generation | 🔜 later |
+| Typed-message API (`protobuf.message`: the `Message` trait + `encode`/`decode`) | ✅ implemented |
+| `.proto` → Mojo code generation | ⏳ next |
 
 ## How to review code that uses this
 
