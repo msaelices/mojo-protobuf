@@ -7,6 +7,10 @@ tag first, via `decode_tag`, and dispatches on the field number). `skip_field`
 discards an unknown field's value, which is what makes forward compatibility
 work.
 
+Scope: 32-bit varint types (`int32`/`uint32`/`sint32`) ride the 64-bit helpers,
+and `float`/`double` ride `fixed32`/`fixed64` with a bit-cast — both are
+wire-compatible. Dedicated typed wrappers will arrive with the message API.
+
 A typical decode loop:
 
 ```mojo
@@ -100,44 +104,72 @@ def write_string(field_number: Int, value: String, mut out: List[Byte]):
 
 
 def read_uint64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
-    """Reads a varint `uint64`/`uint32`/`enum` value."""
+    """Reads a varint `uint64`/`uint32`/`enum` value (tag already consumed).
+
+    Raises:
+        If the input is truncated.
+    """
     return decode_varint(data, pos)
 
 
 def read_int64(data: Span[Byte, _], mut pos: Int) raises -> Int64:
-    """Reads a varint `int64`/`int32` value (two's complement)."""
+    """Reads a varint `int64`/`int32` value, two's complement (tag consumed).
+
+    Raises:
+        If the input is truncated.
+    """
     return Int64(decode_varint(data, pos))
 
 
 def read_sint64(data: Span[Byte, _], mut pos: Int) raises -> Int64:
-    """Reads a ZigZag `sint64`/`sint32` value."""
+    """Reads a ZigZag `sint64`/`sint32` value (tag already consumed).
+
+    Raises:
+        If the input is truncated.
+    """
     return zigzag_decode(decode_varint(data, pos))
 
 
 def read_bool(data: Span[Byte, _], mut pos: Int) raises -> Bool:
-    """Reads a `bool` value (any non-zero varint is `True`)."""
+    """Reads a `bool` value; any non-zero varint is `True` (tag consumed).
+
+    Raises:
+        If the input is truncated.
+    """
     return decode_varint(data, pos) != 0
 
 
 def read_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
-    """Reads a `fixed32`/`sfixed32`/`float` value (4 little-endian bytes)."""
+    """Reads a `fixed32`/`sfixed32`/`float` value, 4 LE bytes (tag consumed).
+
+    Raises:
+        If fewer than 4 bytes remain.
+    """
     return decode_fixed32(data, pos)
 
 
 def read_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
-    """Reads a `fixed64`/`sfixed64`/`double` value (8 little-endian bytes)."""
+    """Reads a `fixed64`/`sfixed64`/`double` value, 8 LE bytes (tag consumed).
+
+    Raises:
+        If fewer than 8 bytes remain.
+    """
     return decode_fixed64(data, pos)
 
 
 def read_bytes(
     data: Span[Byte, _], mut pos: Int
 ) raises -> Span[Byte, data.origin]:
-    """Reads a `bytes` value as a zero-copy view into `data`."""
+    """Reads a `bytes` value as a zero-copy view into `data` (tag consumed).
+
+    Raises:
+        If the length prefix is malformed or exceeds the buffer.
+    """
     return decode_bytes(data, pos)
 
 
 def read_string(data: Span[Byte, _], mut pos: Int) raises -> String:
-    """Reads a `string` value, validating its UTF-8.
+    """Reads a `string` value, validating its UTF-8 (tag already consumed).
 
     Raises:
         If the bytes are not valid UTF-8, or the length is malformed.
