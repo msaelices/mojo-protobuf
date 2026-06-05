@@ -11,6 +11,11 @@ from protobuf.fields import (
     write_string,
 )
 from protobuf.message import Message, decode, encode
+from protobuf.size import (
+    bool_field_size,
+    int64_field_size,
+    string_field_size,
+)
 
 
 @fieldwise_init
@@ -23,6 +28,13 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
         self.active = False
+
+    def encoded_size(self) -> Int:
+        return (
+            int64_field_size(1, self.id)
+            + string_field_size(2, self.name)
+            + bool_field_size(3)
+        )
 
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)
@@ -107,6 +119,20 @@ def test_person_reencode_is_stable() raises:
     assert_equal(len(first), len(second))
     for i in range(len(first)):
         assert_equal(first[i], second[i])
+
+
+def test_encoded_size_matches_output() raises:
+    var p = Person(-12345, "héllo world", True)
+    assert_equal(len(encode(p)), p.encoded_size())
+
+
+def test_encode_reserves_exactly() raises:
+    # encode reserves encoded_size() up front, so the buffer never grows:
+    # capacity == length proves no reallocation happened.
+    var p = Person(-12345, "a longer name to force several appends", True)
+    var bytes = encode(p)
+    assert_equal(bytes.capacity, p.encoded_size())
+    assert_equal(bytes.capacity, len(bytes))
 
 
 def main() raises:
