@@ -21,6 +21,10 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
 
+    def __init__(out self, id: Int64, name: String):
+        self.id = id
+        self.name = name
+
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)
         write_string(2, self.name, output)
@@ -29,6 +33,7 @@ struct Person(Message):
         mut self, field_number: Int, wire_type: Int,
         data: Span[Byte, _], mut pos: Int,
     ) raises:
+        # A generator would also check wire_type matches each field's type.
         if field_number == 1:
             self.id = read_int64(data, pos)
         elif field_number == 2:
@@ -49,6 +54,12 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
 
     Conforming types must be default-constructible (so `decode` can build one to
     fill in) and provide `encode_to` and `merge_field`.
+
+    Two protobuf rules are the conformer's responsibility (the `protoc`
+    generator will emit them; hand-written examples here keep things simple):
+    validating that a known field's `wire_type` matches its declared type, and
+    omitting default-valued singular scalars from `encode_to` for canonical
+    proto3 output.
     """
 
     def encode_to(self, mut output: List[Byte]):

@@ -86,6 +86,10 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
 
+    def __init__(out self, id: Int64, name: String):
+        self.id = id
+        self.name = name
+
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)
         write_string(2, self.name, output)
@@ -107,6 +111,11 @@ var p = decode[Person](Span(bytes))
 
 `decode` default-constructs the message, so fields absent from the wire keep
 their defaults — exactly protobuf's "missing field" semantics.
+
+This hand-written example keeps two things simple that the code generator will
+handle: it doesn't check that a known field's wire type matches (a mismatched
+tag would mis-decode), and it always serializes every field rather than omitting
+default-valued scalars as canonical proto3 does.
 
 ## What's next
 
