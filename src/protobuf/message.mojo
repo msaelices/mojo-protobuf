@@ -31,17 +31,23 @@ from std.reflection import reflect
 
 from protobuf.fields import (
     read_bool,
+    read_double,
+    read_float,
     read_int64,
     read_string,
     read_uint64,
     skip_field,
     write_bool,
+    write_double,
+    write_float,
     write_int64,
     write_string,
     write_uint64,
 )
 from protobuf.size import (
     bool_field_size,
+    fixed32_field_size,
+    fixed64_field_size,
     int64_field_size,
     string_field_size,
     uint64_field_size,
@@ -58,6 +64,8 @@ comptime _INT64_NAME = reflect[Int64].name()
 comptime _UINT64_NAME = reflect[UInt64].name()
 comptime _BOOL_NAME = reflect[Bool].name()
 comptime _STRING_NAME = reflect[String].name()
+comptime _FLOAT32_NAME = reflect[Float32].name()
+comptime _FLOAT64_NAME = reflect[Float64].name()
 
 
 trait Message(Defaultable, Movable, ImplicitlyDestructible):
@@ -67,8 +75,9 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
     struct that conforms and is default-constructible gets `encode_to`,
     `merge_field`, and `encoded_size` for free, with **field number = the field's
     1-based position**. Supported field types: `Int`, `Int64`, `UInt64`, `Bool`,
-    `String` (`Int`, the machine-width integer, maps to an `int64` varint). Any
-    other type is a compile error unless the methods are overridden.
+    `String`, `Float32`, `Float64` (`Int`, the machine-width integer, maps to an
+    `int64` varint). Any other type is a compile error unless the methods are
+    overridden.
 
     Override the three methods for custom/non-sequential field numbers, types
     the reflection path doesn't cover, or proto3 niceties (wire-type validation
@@ -97,6 +106,10 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                 total += bool_field_size(idx + 1)
             elif name == _STRING_NAME:
                 total += string_field_size(idx + 1, rebind[String](f))
+            elif name == _FLOAT32_NAME:
+                total += fixed32_field_size(idx + 1)
+            elif name == _FLOAT64_NAME:
+                total += fixed64_field_size(idx + 1)
             else:
                 comptime assert False, "Message: unsupported field type"
         return total
@@ -117,6 +130,10 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                 write_bool(idx + 1, rebind[Bool](f), output)
             elif name == _STRING_NAME:
                 write_string(idx + 1, rebind[String](f), output)
+            elif name == _FLOAT32_NAME:
+                write_float(idx + 1, rebind[Float32](f), output)
+            elif name == _FLOAT64_NAME:
+                write_double(idx + 1, rebind[Float64](f), output)
             else:
                 comptime assert False, "Message: unsupported field type"
 
@@ -164,6 +181,14 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                     rebind[String](
                         reflect[Self].field_ref[idx](self)
                     ) = read_string(data, pos)
+                elif name == _FLOAT32_NAME:
+                    rebind[Float32](
+                        reflect[Self].field_ref[idx](self)
+                    ) = read_float(data, pos)
+                elif name == _FLOAT64_NAME:
+                    rebind[Float64](
+                        reflect[Self].field_ref[idx](self)
+                    ) = read_double(data, pos)
                 else:
                     comptime assert False, "Message: unsupported field type"
                 handled = True
