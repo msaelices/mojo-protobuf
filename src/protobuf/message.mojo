@@ -1,16 +1,9 @@
 """The `Message` trait and generic encode/decode drivers.
 
-A protobuf message type conforms to `Message` by providing two methods:
-
-- `encode_to(self, mut output)` — append the message's fields, using the
-  `protobuf.fields` `write_*` helpers.
-- `merge_field(mut self, field_number, wire_type, data, mut pos)` — handle one
-  field: read it into the right struct field, or `skip_field` if unknown.
-
-The generic `encode`/`decode` functions then drive the rest: `encode` collects
-the bytes, and `decode` default-constructs the message and runs the tag-reading
-loop, calling `merge_field` for each field. This is the contract a future
-`protoc` code generator will emit for each message.
+The `Message` trait's three methods (`encode_to`, `merge_field`, `encoded_size`)
+have default implementations driven by reflection, so a default-constructible
+struct of supported fields serializes with **no hand-written code** — field
+number is the field's 1-based position:
 
 ```mojo
 @fieldwise_init
@@ -22,57 +15,101 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
 
-    def encoded_size(self) -> Int:
-        return int64_field_size(1, self.id) + string_field_size(2, self.name)
-
-    def encode_to(self, mut output: List[Byte]):
-        write_int64(1, self.id, output)
-        write_string(2, self.name, output)
-
-    def merge_field(
-        mut self, field_number: Int, wire_type: Int,
-        data: Span[Byte, _], mut pos: Int,
-    ) raises:
-        # A generator would also check wire_type matches each field's type.
-        if field_number == 1:
-            self.id = read_int64(data, pos)
-        elif field_number == 2:
-            self.name = read_string(data, pos)
-        else:
-            skip_field(data, pos, wire_type)
-
 var bytes = encode(Person(id=1, name=String("ada")))
 var p = decode[Person](Span(bytes))
 ```
+
+The generic `encode`/`decode` functions drive the rest: `encode` reserves the
+buffer using `encoded_size()`, and `decode` default-constructs the message and
+runs the tag-reading loop, calling `merge_field` for each field. Override the
+three methods (see the `Message` docstring) for custom field numbers, field
+types the reflection path doesn't cover, or canonical proto3 output — the
+contract a future `protoc` generator emits.
 """
 
+from std.reflection import reflect
+
+from protobuf.fields import (
+    read_bool,
+    read_int64,
+    read_string,
+    read_uint64,
+    skip_field,
+    write_bool,
+    write_int64,
+    write_string,
+    write_uint64,
+)
+from protobuf.size import (
+    bool_field_size,
+    int64_field_size,
+    string_field_size,
+    uint64_field_size,
+)
 from protobuf.wire import decode_tag
+
+# Reflected type names, used to dispatch a struct field to the right codec.
+comptime _INT64_NAME = reflect[Int64].name()
+comptime _UINT64_NAME = reflect[UInt64].name()
+comptime _BOOL_NAME = reflect[Bool].name()
+comptime _STRING_NAME = reflect[String].name()
 
 
 trait Message(Defaultable, Movable, ImplicitlyDestructible):
     """A type that can be serialized to and from the protobuf wire format.
 
-    Conforming types must be default-constructible (so `decode` can build one to
-    fill in) and provide `encode_to` and `merge_field`.
+    The three methods have **default implementations driven by reflection**: a
+    struct that conforms and is default-constructible gets `encode_to`,
+    `merge_field`, and `encoded_size` for free, with **field number = the field's
+    1-based position**. Supported field types: `Int64`, `UInt64`, `Bool`,
+    `String` (any other type is a compile error unless the methods are
+    overridden).
 
-    Two protobuf rules are the conformer's responsibility (the `protoc`
-    generator will emit them; hand-written examples here keep things simple):
-    validating that a known field's `wire_type` matches its declared type, and
-    omitting default-valued singular scalars from `encode_to` for canonical
-    proto3 output.
+    Override the three methods for custom/non-sequential field numbers, types
+    the reflection path doesn't cover, or proto3 niceties (wire-type validation
+    of known fields, omitting default-valued scalars). This is the contract a
+    `protoc` generator emits.
     """
 
     def encoded_size(self) -> Int:
         """Returns the number of bytes `encode_to` will append.
 
-        `encode` uses this to reserve the output buffer exactly, so encoding
-        does no reallocations. Implement it with the `protobuf.size` helpers.
+        `encode` uses this to reserve the output buffer exactly. The default
+        sums each field's size by reflection.
         """
-        ...
+        var total = 0
+        comptime for idx in range(reflect[Self].field_count()):
+            comptime field_type = reflect[Self].field_types()[idx]
+            comptime name = reflect[field_type].name()
+            ref f = reflect[Self].field_ref[idx](self)
+            comptime if name == _INT64_NAME:
+                total += int64_field_size(idx + 1, rebind[Int64](f))
+            elif name == _UINT64_NAME:
+                total += uint64_field_size(idx + 1, rebind[UInt64](f))
+            elif name == _BOOL_NAME:
+                total += bool_field_size(idx + 1)
+            elif name == _STRING_NAME:
+                total += string_field_size(idx + 1, rebind[String](f))
+            else:
+                comptime assert False, "Message: unsupported field type"
+        return total
 
     def encode_to(self, mut output: List[Byte]):
-        """Appends this message's fields to `output`."""
-        ...
+        """Appends this message's fields to `output` (by reflection by default)."""
+        comptime for idx in range(reflect[Self].field_count()):
+            comptime field_type = reflect[Self].field_types()[idx]
+            comptime name = reflect[field_type].name()
+            ref f = reflect[Self].field_ref[idx](self)
+            comptime if name == _INT64_NAME:
+                write_int64(idx + 1, rebind[Int64](f), output)
+            elif name == _UINT64_NAME:
+                write_uint64(idx + 1, rebind[UInt64](f), output)
+            elif name == _BOOL_NAME:
+                write_bool(idx + 1, rebind[Bool](f), output)
+            elif name == _STRING_NAME:
+                write_string(idx + 1, rebind[String](f), output)
+            else:
+                comptime assert False, "Message: unsupported field type"
 
     def merge_field(
         mut self,
@@ -93,7 +130,32 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
             If the field value is malformed or an unknown field has an invalid
             wire type.
         """
-        ...
+        var handled = False
+        comptime for idx in range(reflect[Self].field_count()):
+            if field_number == idx + 1:
+                comptime field_type = reflect[Self].field_types()[idx]
+                comptime name = reflect[field_type].name()
+                comptime if name == _INT64_NAME:
+                    rebind[Int64](
+                        reflect[Self].field_ref[idx](self)
+                    ) = read_int64(data, pos)
+                elif name == _UINT64_NAME:
+                    rebind[UInt64](
+                        reflect[Self].field_ref[idx](self)
+                    ) = read_uint64(data, pos)
+                elif name == _BOOL_NAME:
+                    rebind[Bool](
+                        reflect[Self].field_ref[idx](self)
+                    ) = read_bool(data, pos)
+                elif name == _STRING_NAME:
+                    rebind[String](
+                        reflect[Self].field_ref[idx](self)
+                    ) = read_string(data, pos)
+                else:
+                    comptime assert False, "Message: unsupported field type"
+                handled = True
+        if not handled:
+            skip_field(data, pos, wire_type)
 
 
 def encode[MessageType: Message](msg: MessageType) -> List[Byte]:
