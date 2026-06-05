@@ -49,6 +49,10 @@ from protobuf.size import (
 from protobuf.wire import decode_tag
 
 # Reflected type names, used to dispatch a struct field to the right codec.
+# This is collision-safe: builtins reflect to bare names (e.g. `Bool`,
+# `SIMD[DType.int64, 1]`), while user-defined types are module-qualified (e.g.
+# `mymod.Bool`), so a same-named user type fails the `==` and falls through to
+# the unsupported-type guard rather than matching the wrong codec.
 comptime _INT64_NAME = reflect[Int64].name()
 comptime _UINT64_NAME = reflect[UInt64].name()
 comptime _BOOL_NAME = reflect[Bool].name()
@@ -62,8 +66,8 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
     struct that conforms and is default-constructible gets `encode_to`,
     `merge_field`, and `encoded_size` for free, with **field number = the field's
     1-based position**. Supported field types: `Int64`, `UInt64`, `Bool`,
-    `String` (any other type is a compile error unless the methods are
-    overridden).
+    `String` — note the explicit-width `Int64`, not `Int`. Any other type is a
+    compile error unless the methods are overridden.
 
     Override the three methods for custom/non-sequential field numbers, types
     the reflection path doesn't cover, or proto3 niceties (wire-type validation
