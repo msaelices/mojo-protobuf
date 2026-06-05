@@ -22,6 +22,9 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
 
+    def encoded_size(self) -> Int:
+        return int64_field_size(1, self.id) + string_field_size(2, self.name)
+
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)
         write_string(2, self.name, output)
@@ -58,6 +61,14 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
     omitting default-valued singular scalars from `encode_to` for canonical
     proto3 output.
     """
+
+    def encoded_size(self) -> Int:
+        """Returns the number of bytes `encode_to` will append.
+
+        `encode` uses this to reserve the output buffer exactly, so encoding
+        does no reallocations. Implement it with the `protobuf.size` helpers.
+        """
+        ...
 
     def encode_to(self, mut output: List[Byte]):
         """Appends this message's fields to `output`."""
@@ -97,7 +108,7 @@ def encode[MessageType: Message](msg: MessageType) -> List[Byte]:
     Returns:
         The encoded bytes.
     """
-    var output = List[Byte]()
+    var output = List[Byte](capacity=msg.encoded_size())
     msg.encode_to(output)
     return output^
 

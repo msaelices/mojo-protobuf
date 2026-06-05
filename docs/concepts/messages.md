@@ -87,6 +87,9 @@ struct Person(Message):
         self.id = 0
         self.name = String("")
 
+    def encoded_size(self) -> Int:  # lets encode() reserve the buffer exactly
+        return int64_field_size(1, self.id) + string_field_size(2, self.name)
+
     def encode_to(self, mut output: List[Byte]):
         write_int64(1, self.id, output)
         write_string(2, self.name, output)
@@ -107,7 +110,9 @@ var p = decode[Person](Span(bytes))
 ```
 
 `decode` default-constructs the message, so fields absent from the wire keep
-their defaults — exactly protobuf's "missing field" semantics.
+their defaults — exactly protobuf's "missing field" semantics. `encode` calls
+`encoded_size()` first and builds the output `List` with that exact capacity, so
+serialization does zero reallocations (see [`protobuf.size`](wire-format.md)).
 
 This hand-written example keeps two things simple that the code generator will
 handle: it doesn't check that a known field's wire type matches (a mismatched
