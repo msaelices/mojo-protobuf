@@ -9,5 +9,5 @@ This package is a work in progress. The planned surface area is:
 Nothing is implemented yet beyond this scaffold.
 """
 
-alias VERSION = "0.1.0"
+comptime VERSION = "0.1.0"
 """The package version."""

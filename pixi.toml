@@ -12,5 +12,5 @@ readme = "README.md"
 max = "*"
 
 [tasks]
-test = "mojo test -I src test/"
+test = "mojo run -I src test/test_wire.mojo"
 format = "mojo format ./"
