@@ -1,0 +1,185 @@
+"""Typed protobuf field codecs.
+
+A protobuf message is a flat sequence of `(tag, value)` pairs. This module adds
+a typed layer on top of `protobuf.wire`: each `write_*` helper emits the field
+tag and then the value; each `read_*` helper reads a value (the caller reads the
+tag first, via `decode_tag`, and dispatches on the field number). `skip_field`
+discards an unknown field's value, which is what makes forward compatibility
+work.
+
+A typical decode loop:
+
+```mojo
+var pos = 0
+while pos < len(data):
+    var field_number, wire_type = decode_tag(data, pos)
+    if field_number == 1:
+        id = read_int64(data, pos)
+    elif field_number == 2:
+        name = read_string(data, pos)
+    else:
+        skip_field(data, pos, wire_type)
+```
+"""
+
+from protobuf.wire import (
+    WIRE_I32,
+    WIRE_I64,
+    WIRE_LEN,
+    WIRE_VARINT,
+    decode_bytes,
+    decode_fixed32,
+    decode_fixed64,
+    decode_varint,
+    encode_bytes,
+    encode_fixed32,
+    encode_fixed64,
+    encode_tag,
+    encode_varint,
+    zigzag_decode,
+    zigzag_encode,
+)
+
+
+# ===-----------------------------------------------------------------------===#
+# Writers (tag + value)
+# ===-----------------------------------------------------------------------===#
+
+
+def write_uint64(field_number: Int, value: UInt64, mut out: List[Byte]):
+    """Writes a `uint64`/`uint32`/`enum` field as a varint."""
+    encode_tag(field_number, WIRE_VARINT, out)
+    encode_varint(value, out)
+
+
+def write_int64(field_number: Int, value: Int64, mut out: List[Byte]):
+    """Writes an `int64`/`int32` field as a varint (two's complement)."""
+    encode_tag(field_number, WIRE_VARINT, out)
+    encode_varint(UInt64(value), out)
+
+
+def write_sint64(field_number: Int, value: Int64, mut out: List[Byte]):
+    """Writes a `sint64`/`sint32` field as a ZigZag varint."""
+    encode_tag(field_number, WIRE_VARINT, out)
+    encode_varint(zigzag_encode(value), out)
+
+
+def write_bool(field_number: Int, value: Bool, mut out: List[Byte]):
+    """Writes a `bool` field as a varint (`0` or `1`)."""
+    encode_tag(field_number, WIRE_VARINT, out)
+    encode_varint(UInt64(1) if value else UInt64(0), out)
+
+
+def write_fixed32(field_number: Int, value: UInt32, mut out: List[Byte]):
+    """Writes a `fixed32`/`sfixed32`/`float` field as 4 little-endian bytes."""
+    encode_tag(field_number, WIRE_I32, out)
+    encode_fixed32(value, out)
+
+
+def write_fixed64(field_number: Int, value: UInt64, mut out: List[Byte]):
+    """Writes a `fixed64`/`sfixed64`/`double` field as 8 little-endian bytes."""
+    encode_tag(field_number, WIRE_I64, out)
+    encode_fixed64(value, out)
+
+
+def write_bytes(field_number: Int, value: Span[Byte, _], mut out: List[Byte]):
+    """Writes a `bytes` (or embedded message) field, length-delimited."""
+    encode_tag(field_number, WIRE_LEN, out)
+    encode_bytes(value, out)
+
+
+def write_string(field_number: Int, value: String, mut out: List[Byte]):
+    """Writes a `string` field (its UTF-8 bytes), length-delimited."""
+    encode_tag(field_number, WIRE_LEN, out)
+    encode_bytes(value.as_bytes(), out)
+
+
+# ===-----------------------------------------------------------------------===#
+# Readers (value only; read the tag first with `decode_tag`)
+# ===-----------------------------------------------------------------------===#
+
+
+def read_uint64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
+    """Reads a varint `uint64`/`uint32`/`enum` value."""
+    return decode_varint(data, pos)
+
+
+def read_int64(data: Span[Byte, _], mut pos: Int) raises -> Int64:
+    """Reads a varint `int64`/`int32` value (two's complement)."""
+    return Int64(decode_varint(data, pos))
+
+
+def read_sint64(data: Span[Byte, _], mut pos: Int) raises -> Int64:
+    """Reads a ZigZag `sint64`/`sint32` value."""
+    return zigzag_decode(decode_varint(data, pos))
+
+
+def read_bool(data: Span[Byte, _], mut pos: Int) raises -> Bool:
+    """Reads a `bool` value (any non-zero varint is `True`)."""
+    return decode_varint(data, pos) != 0
+
+
+def read_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
+    """Reads a `fixed32`/`sfixed32`/`float` value (4 little-endian bytes)."""
+    return decode_fixed32(data, pos)
+
+
+def read_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
+    """Reads a `fixed64`/`sfixed64`/`double` value (8 little-endian bytes)."""
+    return decode_fixed64(data, pos)
+
+
+def read_bytes(
+    data: Span[Byte, _], mut pos: Int
+) raises -> Span[Byte, data.origin]:
+    """Reads a `bytes` value as a zero-copy view into `data`."""
+    return decode_bytes(data, pos)
+
+
+def read_string(data: Span[Byte, _], mut pos: Int) raises -> String:
+    """Reads a `string` value, validating its UTF-8.
+
+    Raises:
+        If the bytes are not valid UTF-8, or the length is malformed.
+    """
+    return String(from_utf8=decode_bytes(data, pos))
+
+
+# ===-----------------------------------------------------------------------===#
+# Skipping unknown fields
+# ===-----------------------------------------------------------------------===#
+
+
+def skip_field(data: Span[Byte, _], mut pos: Int, wire_type: Int) raises:
+    """Advances `pos` past the value of an unknown field.
+
+    This is the forward-compatibility primitive: a decoder that doesn't
+    recognise a field number skips its value and keeps going.
+
+    Args:
+        data: The byte view to read from.
+        pos: The current read offset; advanced past the value.
+        wire_type: The wire type from the field tag.
+
+    Raises:
+        If the value is truncated, or `wire_type` is not a known value
+        (the deprecated group types 3/4 and the illegal 6/7 are rejected here).
+    """
+    if wire_type == WIRE_VARINT:
+        _ = decode_varint(data, pos)
+    elif wire_type == WIRE_I64:
+        if pos + 8 > len(data):
+            raise Error("skip_field: truncated I64")
+        pos += 8
+    elif wire_type == WIRE_LEN:
+        var length = decode_varint(data, pos)
+        var remaining = len(data) - pos
+        if length > UInt64(remaining):
+            raise Error("skip_field: length exceeds buffer")
+        pos += Int(length)
+    elif wire_type == WIRE_I32:
+        if pos + 4 > len(data):
+            raise Error("skip_field: truncated I32")
+        pos += 4
+    else:
+        raise Error("skip_field: invalid wire type")
