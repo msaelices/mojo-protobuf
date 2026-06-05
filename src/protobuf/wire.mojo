@@ -19,21 +19,21 @@ comptime WIRE_I32 = 5
 """fixed32/sfixed32/float."""
 
 
-def encode_varint(value: UInt64, mut out: List[Byte]):
-    """Appends `value` to `out` as a base-128 varint (LEB128).
+def encode_varint(value: UInt64, mut output: List[Byte]):
+    """Appends `value` to `output` as a base-128 varint (LEB128).
 
     Each byte holds 7 bits of the value, little-endian, with the high bit set on
     every byte except the last.
 
     Args:
         value: The value to encode.
-        out: The byte buffer to append to.
+        output: The byte buffer to append to.
     """
     var v = value
     while v >= 0x80:
-        out.append(Byte((v & 0x7F) | 0x80))
+        output.append(Byte((v & 0x7F) | 0x80))
         v >>= 7
-    out.append(Byte(v))
+    output.append(Byte(v))
 
 
 def decode_varint(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
@@ -96,13 +96,13 @@ def zigzag_decode(value: UInt64) -> Int64:
     return Int64(value >> 1) ^ -Int64(value & 1)
 
 
-def encode_tag(field_number: Int, wire_type: Int, mut out: List[Byte]):
+def encode_tag(field_number: Int, wire_type: Int, mut output: List[Byte]):
     """Appends a field tag (`field_number << 3 | wire_type`) as a varint.
 
     Args:
         field_number: The field number (1 to 2^29-1).
         wire_type: One of the `WIRE_*` constants.
-        out: The byte buffer to append to.
+        output: The byte buffer to append to.
     """
     assert field_number >= 1, "encode_tag: field_number must be >= 1"
     assert field_number <= 0x1FFFFFFF, "encode_tag: field_number exceeds 2^29-1"
@@ -112,7 +112,7 @@ def encode_tag(field_number: Int, wire_type: Int, mut out: List[Byte]):
         or wire_type == WIRE_LEN
         or wire_type == WIRE_I32
     ), "encode_tag: invalid wire_type"
-    encode_varint(UInt64((field_number << 3) | wire_type), out)
+    encode_varint(UInt64((field_number << 3) | wire_type), output)
 
 
 def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
@@ -142,16 +142,16 @@ def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-def encode_fixed32(value: UInt32, mut out: List[Byte]):
+def encode_fixed32(value: UInt32, mut output: List[Byte]):
     """Appends a 32-bit value as 4 little-endian bytes (`WIRE_I32`).
 
     Args:
         value: The value to encode (fixed32/sfixed32, or a bit-cast float).
-        out: The byte buffer to append to.
+        output: The byte buffer to append to.
     """
     var v = value
     for _ in range(4):
-        out.append(Byte(v))  # Byte() truncates to the low 8 bits
+        output.append(Byte(v))  # Byte() truncates to the low 8 bits
         v >>= 8
 
 
@@ -180,16 +180,16 @@ def decode_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
     return r
 
 
-def encode_fixed64(value: UInt64, mut out: List[Byte]):
+def encode_fixed64(value: UInt64, mut output: List[Byte]):
     """Appends a 64-bit value as 8 little-endian bytes (`WIRE_I64`).
 
     Args:
         value: The value to encode (fixed64/sfixed64, or a bit-cast double).
-        out: The byte buffer to append to.
+        output: The byte buffer to append to.
     """
     var v = value
     for _ in range(8):
-        out.append(Byte(v))
+        output.append(Byte(v))
         v >>= 8
 
 
@@ -220,17 +220,17 @@ def decode_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
 # ===-----------------------------------------------------------------------===#
 
 
-def encode_bytes(data: Span[Byte, _], mut out: List[Byte]):
+def encode_bytes(data: Span[Byte, _], mut output: List[Byte]):
     """Appends a length-delimited field: a varint length, then the bytes.
 
     Used for `bytes`, `string`, embedded messages, and packed repeated fields.
 
     Args:
         data: The payload bytes.
-        out: The byte buffer to append to.
+        output: The byte buffer to append to.
     """
-    encode_varint(UInt64(len(data)), out)
-    out.extend(data)
+    encode_varint(UInt64(len(data)), output)
+    output.extend(data)
 
 
 def decode_bytes(

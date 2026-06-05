@@ -23,51 +23,51 @@ from protobuf.fields import (
 
 
 def test_scalar_field_roundtrips() raises:
-    var out = List[Byte]()
-    write_uint64(1, 300, out)
-    write_int64(2, -5, out)
-    write_sint64(3, -5, out)
-    write_bool(4, True, out)
-    write_fixed32(5, 0xCAFEBABE, out)
-    write_fixed64(6, 0x1122334455667788, out)
+    var output = List[Byte]()
+    write_uint64(1, 300, output)
+    write_int64(2, -5, output)
+    write_sint64(3, -5, output)
+    write_bool(4, True, output)
+    write_fixed32(5, 0xCAFEBABE, output)
+    write_fixed64(6, 0x1122334455667788, output)
 
     var pos = 0
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_uint64(Span(out), pos), 300)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_int64(Span(out), pos), -5)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_sint64(Span(out), pos), -5)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_bool(Span(out), pos), True)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_fixed32(Span(out), pos), 0xCAFEBABE)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_fixed64(Span(out), pos), 0x1122334455667788)
-    assert_equal(pos, len(out))
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_uint64(Span(output), pos), 300)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_int64(Span(output), pos), -5)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_sint64(Span(output), pos), -5)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_bool(Span(output), pos), True)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_fixed32(Span(output), pos), 0xCAFEBABE)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_fixed64(Span(output), pos), 0x1122334455667788)
+    assert_equal(pos, len(output))
 
 
 def test_message_roundtrip() raises:
     # A small multi-field message, encoded then decoded with a dispatch loop.
-    var out = List[Byte]()
-    write_int64(1, -5, out)
-    write_string(2, "héllo", out)  # non-ASCII to exercise UTF-8
-    write_bool(3, True, out)
+    var output = List[Byte]()
+    write_int64(1, -5, output)
+    write_string(2, "héllo", output)  # non-ASCII to exercise UTF-8
+    write_bool(3, True, output)
 
     var pos = 0
     var got_id: Int64 = 0
     var got_name = String("")
     var got_active = False
-    while pos < len(out):
-        var field_number, wire_type = decode_tag(Span(out), pos)
+    while pos < len(output):
+        var field_number, wire_type = decode_tag(Span(output), pos)
         if field_number == 1:
-            got_id = read_int64(Span(out), pos)
+            got_id = read_int64(Span(output), pos)
         elif field_number == 2:
-            got_name = read_string(Span(out), pos)
+            got_name = read_string(Span(output), pos)
         elif field_number == 3:
-            got_active = read_bool(Span(out), pos)
+            got_active = read_bool(Span(output), pos)
         else:
-            skip_field(Span(out), pos, wire_type)
+            skip_field(Span(output), pos, wire_type)
 
     assert_equal(got_id, -5)
     assert_equal(got_name, "héllo")
@@ -75,19 +75,19 @@ def test_message_roundtrip() raises:
 
 
 def test_skip_unknown_field() raises:
-    var out = List[Byte]()
-    write_string(5, "ignore me", out)  # unknown LEN field
-    write_fixed32(6, 999, out)  # unknown I32 field
-    write_int64(1, 42, out)  # known
+    var output = List[Byte]()
+    write_string(5, "ignore me", output)  # unknown LEN field
+    write_fixed32(6, 999, output)  # unknown I32 field
+    write_int64(1, 42, output)  # known
 
     var pos = 0
     var got: Int64 = 0
-    while pos < len(out):
-        var field_number, wire_type = decode_tag(Span(out), pos)
+    while pos < len(output):
+        var field_number, wire_type = decode_tag(Span(output), pos)
         if field_number == 1:
-            got = read_int64(Span(out), pos)
+            got = read_int64(Span(output), pos)
         else:
-            skip_field(Span(out), pos, wire_type)
+            skip_field(Span(output), pos, wire_type)
 
     assert_equal(got, 42)
 
@@ -101,16 +101,16 @@ def test_skip_invalid_wire_type_raises() raises:
 
 def test_bytes_roundtrip() raises:
     var payload: List[Byte] = [Byte(0x00), Byte(0xFF), Byte(0x10)]  # binary
-    var out = List[Byte]()
-    write_bytes(7, Span(payload), out)
+    var output = List[Byte]()
+    write_bytes(7, Span(payload), output)
     var pos = 0
-    var field_number, _ = decode_tag(Span(out), pos)
+    var field_number, _ = decode_tag(Span(output), pos)
     assert_equal(field_number, 7)
-    var view = read_bytes(Span(out), pos)
+    var view = read_bytes(Span(output), pos)
     assert_equal(len(view), 3)
     assert_equal(view[0], Byte(0x00))
     assert_equal(view[1], Byte(0xFF))
-    assert_equal(pos, len(out))
+    assert_equal(pos, len(output))
 
 
 def test_read_string_invalid_utf8_raises() raises:
@@ -147,22 +147,22 @@ def test_skip_field_malformed_raises() raises:
 
 
 def test_varint_boundary_values() raises:
-    var out = List[Byte]()
-    write_int64(1, Int64.MIN, out)
-    write_int64(2, Int64.MAX, out)
-    write_uint64(3, UInt64.MAX, out)
-    write_sint64(4, Int64.MIN, out)
+    var output = List[Byte]()
+    write_int64(1, Int64.MIN, output)
+    write_int64(2, Int64.MAX, output)
+    write_uint64(3, UInt64.MAX, output)
+    write_sint64(4, Int64.MIN, output)
 
     var pos = 0
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_int64(Span(out), pos), Int64.MIN)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_int64(Span(out), pos), Int64.MAX)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_uint64(Span(out), pos), UInt64.MAX)
-    _ = decode_tag(Span(out), pos)
-    assert_equal(read_sint64(Span(out), pos), Int64.MIN)
-    assert_equal(pos, len(out))
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_int64(Span(output), pos), Int64.MIN)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_int64(Span(output), pos), Int64.MAX)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_uint64(Span(output), pos), UInt64.MAX)
+    _ = decode_tag(Span(output), pos)
+    assert_equal(read_sint64(Span(output), pos), Int64.MIN)
+    assert_equal(pos, len(output))
 
 
 def main() raises:

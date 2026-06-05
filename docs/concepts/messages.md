@@ -22,10 +22,10 @@ typed helper per scalar type so you don't hand-write tag + value each time.
 Each `write_*` helper emits the field tag *and* the value:
 
 ```mojo
-var out = List[Byte]()
-write_int64(1, user_id, out)
-write_string(2, name, out)
-write_bool(3, is_active, out)
+var output = List[Byte]()
+write_int64(1, user_id, output)
+write_string(2, name, output)
+write_bool(3, is_active, output)
 ```
 
 | Helper | protobuf types |

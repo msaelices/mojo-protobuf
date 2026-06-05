@@ -50,52 +50,52 @@ from protobuf.wire import (
 # ===-----------------------------------------------------------------------===#
 
 
-def write_uint64(field_number: Int, value: UInt64, mut out: List[Byte]):
+def write_uint64(field_number: Int, value: UInt64, mut output: List[Byte]):
     """Writes a `uint64`/`uint32`/`enum` field as a varint."""
-    encode_tag(field_number, WIRE_VARINT, out)
-    encode_varint(value, out)
+    encode_tag(field_number, WIRE_VARINT, output)
+    encode_varint(value, output)
 
 
-def write_int64(field_number: Int, value: Int64, mut out: List[Byte]):
+def write_int64(field_number: Int, value: Int64, mut output: List[Byte]):
     """Writes an `int64`/`int32` field as a varint (two's complement)."""
-    encode_tag(field_number, WIRE_VARINT, out)
-    encode_varint(UInt64(value), out)
+    encode_tag(field_number, WIRE_VARINT, output)
+    encode_varint(UInt64(value), output)
 
 
-def write_sint64(field_number: Int, value: Int64, mut out: List[Byte]):
+def write_sint64(field_number: Int, value: Int64, mut output: List[Byte]):
     """Writes a `sint64`/`sint32` field as a ZigZag varint."""
-    encode_tag(field_number, WIRE_VARINT, out)
-    encode_varint(zigzag_encode(value), out)
+    encode_tag(field_number, WIRE_VARINT, output)
+    encode_varint(zigzag_encode(value), output)
 
 
-def write_bool(field_number: Int, value: Bool, mut out: List[Byte]):
+def write_bool(field_number: Int, value: Bool, mut output: List[Byte]):
     """Writes a `bool` field as a varint (`0` or `1`)."""
-    encode_tag(field_number, WIRE_VARINT, out)
-    encode_varint(UInt64(1) if value else UInt64(0), out)
+    encode_tag(field_number, WIRE_VARINT, output)
+    encode_varint(UInt64(1) if value else UInt64(0), output)
 
 
-def write_fixed32(field_number: Int, value: UInt32, mut out: List[Byte]):
+def write_fixed32(field_number: Int, value: UInt32, mut output: List[Byte]):
     """Writes a `fixed32`/`sfixed32`/`float` field as 4 little-endian bytes."""
-    encode_tag(field_number, WIRE_I32, out)
-    encode_fixed32(value, out)
+    encode_tag(field_number, WIRE_I32, output)
+    encode_fixed32(value, output)
 
 
-def write_fixed64(field_number: Int, value: UInt64, mut out: List[Byte]):
+def write_fixed64(field_number: Int, value: UInt64, mut output: List[Byte]):
     """Writes a `fixed64`/`sfixed64`/`double` field as 8 little-endian bytes."""
-    encode_tag(field_number, WIRE_I64, out)
-    encode_fixed64(value, out)
+    encode_tag(field_number, WIRE_I64, output)
+    encode_fixed64(value, output)
 
 
-def write_bytes(field_number: Int, value: Span[Byte, _], mut out: List[Byte]):
+def write_bytes(field_number: Int, value: Span[Byte, _], mut output: List[Byte]):
     """Writes a `bytes` (or embedded message) field, length-delimited."""
-    encode_tag(field_number, WIRE_LEN, out)
-    encode_bytes(value, out)
+    encode_tag(field_number, WIRE_LEN, output)
+    encode_bytes(value, output)
 
 
-def write_string(field_number: Int, value: String, mut out: List[Byte]):
+def write_string(field_number: Int, value: String, mut output: List[Byte]):
     """Writes a `string` field (its UTF-8 bytes), length-delimited."""
-    encode_tag(field_number, WIRE_LEN, out)
-    encode_bytes(value.as_bytes(), out)
+    encode_tag(field_number, WIRE_LEN, output)
+    encode_bytes(value.as_bytes(), output)
 
 
 # ===-----------------------------------------------------------------------===#
