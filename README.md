@@ -3,8 +3,8 @@
 A pure-[Mojo](https://www.modular.com/mojo) implementation of
 [Protocol Buffers](https://protobuf.dev/).
 
-> **Status: early scaffold.** No functionality is implemented yet — this repo
-> currently only sets up the project structure, tooling, and CI.
+> **Status: work in progress.** The wire-format runtime and a typed field layer
+> are implemented; a typed-message API and a `protoc` code generator are next.
 
 ## Why
 
@@ -14,13 +14,24 @@ Mojo code that needs to speak these protocols has to fall back to Python interop
 The goal of this project is to provide a native, fast, dependency-free protobuf
 runtime and code generator.
 
+## Documentation
+
+Design notes and concept guides live in [`docs/`](./docs/):
+
+- [The protobuf wire format](./docs/concepts/wire-format.md) — varints, ZigZag,
+  field tags, and wire types.
+- [Messages and fields](./docs/concepts/messages.md) — typed fields, the decode
+  loop, and forward compatibility via `skip_field`.
+
 ## Roadmap
 
-1. **Wire-format runtime** — varint / zigzag / length-delimited encode and
-   decode for the four protobuf wire types.
-2. **Message API** — a way to declare and (de)serialize messages.
-3. **`protoc` plugin** — generate Mojo message structs from `.proto` files.
-4. **Generated bindings** — real schemas such as
+1. ✅ **Wire-format runtime** (`protobuf.wire`) — varint / ZigZag / fixed-width /
+   length-delimited codecs for the four protobuf wire types.
+2. ✅ **Typed field layer** (`protobuf.fields`) — typed `write_*`/`read_*` helpers
+   and `skip_field` for unknown fields.
+3. ⏳ **Typed-message API** — structs with generated `encode`/`decode`.
+4. **`protoc` plugin** — generate Mojo message structs from `.proto` files.
+5. **Generated bindings** — real schemas such as
    [`livekit/protocol`](https://github.com/livekit/protocol).
 
 ## Development
