@@ -9,6 +9,7 @@ from protobuf.fields import (
     write_fixed32,
     write_int64,
     write_string,
+    write_uint64,
 )
 from protobuf.message import Message, decode, encode
 from protobuf.size import (
@@ -169,6 +170,44 @@ def test_reflection_default_from_empty() raises:
     assert_equal(got.email, "")
     assert_equal(got.verified, False)
     assert_equal(got.score, 0)
+
+
+def test_reflection_last_field_wins() raises:
+    var buf = List[Byte]()
+    write_int64(1, 10, buf)
+    write_int64(1, 20, buf)  # field 1 again -> last wins
+    var got = decode[Contact](Span(buf))
+    assert_equal(got.id, 20)
+
+
+def test_reflection_skips_unknown_fields() raises:
+    var buf = List[Byte]()
+    write_int64(1, 5, buf)
+    write_string(9, "from a newer schema", buf)  # unknown LEN field
+    write_fixed32(8, 123, buf)  # unknown I32 field
+    write_uint64(4, 77, buf)  # known
+    var got = decode[Contact](Span(buf))
+    assert_equal(got.id, 5)
+    assert_equal(got.score, 77)
+    assert_equal(got.email, "")  # untouched
+
+
+# Field order differs from `Contact` to prove numbering is positional, not
+# type-based: here field 1 is the String and field 2 the Int64.
+@fieldwise_init
+struct Flipped(Message):
+    var label: String
+    var n: Int64
+
+    def __init__(out self):
+        self.label = String("")
+        self.n = 0
+
+
+def test_reflection_field_order_is_positional() raises:
+    var got = decode[Flipped](Span(encode(Flipped("hi", 42))))
+    assert_equal(got.label, "hi")
+    assert_equal(got.n, 42)
 
 
 def main() raises:
