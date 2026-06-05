@@ -243,5 +243,22 @@ def test_reflection_float_fields() raises:
     assert_equal(got.y, Float64(-2.5))
 
 
+@fieldwise_init
+struct Nums32(Message):
+    var a: Int32
+    var b: UInt32
+
+    def __init__(out self):
+        self.a = 0
+        self.b = 0
+
+
+def test_reflection_int32_fields() raises:
+    # A negative int32 must round-trip (encoded as a sign-extended varint).
+    var got = decode[Nums32](Span(encode(Nums32(-2147483648, 4294967295))))
+    assert_equal(got.a, Int32(-2147483648))  # Int32.MIN
+    assert_equal(got.b, UInt32(4294967295))  # UInt32.MAX
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
