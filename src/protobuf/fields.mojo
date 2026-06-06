@@ -26,6 +26,10 @@ while pos < len(data):
 ```
 """
 
+from std.bit import count_trailing_zeros
+from std.memory import pack_bits
+from std.sys import simd_width_of
+
 from protobuf.wire import (
     WIRE_I32,
     WIRE_I64,
@@ -213,6 +217,65 @@ def read_string(data: Span[Byte, _], mut pos: Int) raises -> String:
         If the bytes are not valid UTF-8, or the length is malformed.
     """
     return String(from_utf8=decode_bytes(data, pos))
+
+
+# ===-----------------------------------------------------------------------===#
+# Packed repeated varint decode (SIMD fast path)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _packed_simd_prefix[
+    dtype: DType
+](blob: Span[Byte, _], mut out: List[Scalar[dtype]]) -> Int:
+    """Bulk-decodes the leading run of 1-byte varints from `blob` via SIMD.
+
+    A varint with the continuation bit clear is a single byte whose value is the
+    byte itself (0-127). A SIMD chunk with no continuation bits is therefore a
+    run of `W` such values, extracted at once. Returns the number of bytes (=
+    values) consumed; stops at the first chunk holding a multi-byte varint, so
+    the caller finishes with the scalar loop (large-value arrays pay at most one
+    SIMD load).
+    """
+    comptime W = simd_width_of[DType.uint8]()
+    var n = len(blob)
+    var ptr = blob.unsafe_ptr()
+    var i = 0
+    while i + W <= n:
+        var chunk = ptr.load[width=W](i)
+        var hi = (chunk & SIMD[DType.uint8, W](0x80)).cast[DType.bool]()
+        if pack_bits(hi) != 0:
+            break  # a multi-byte varint starts in this chunk
+        for k in range(W):
+            out.append(Scalar[dtype](chunk[k]))
+        i += W
+    return i
+
+
+def read_packed_signed[
+    dtype: DType
+](blob: Span[Byte, _], mut out: List[Scalar[dtype]]) raises:
+    """Decodes a packed `int32`/`int64` blob (back-to-back varints) into `out`.
+
+    Uses the SIMD prefix fast path for the common small-value case, then the
+    scalar two's-complement varint reader for the remainder.
+    """
+    var pos = _packed_simd_prefix[dtype](blob, out)
+    while pos < len(blob):
+        out.append(Scalar[dtype](read_int64(blob, pos)))
+
+
+def read_packed_unsigned[
+    dtype: DType
+](blob: Span[Byte, _], mut out: List[Scalar[dtype]]) raises:
+    """Decodes a packed `uint32`/`uint64` blob (varints) into `out`.
+
+    Uses the SIMD prefix fast path for the common small-value case, then the
+    scalar varint reader for the remainder.
+    """
+    var pos = _packed_simd_prefix[dtype](blob, out)
+    while pos < len(blob):
+        out.append(Scalar[dtype](read_uint64(blob, pos)))
 
 
 # ===-----------------------------------------------------------------------===#
