@@ -1,4 +1,4 @@
-from std.testing import assert_equal, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 from protobuf.fields import (
     read_bool,
@@ -437,6 +437,145 @@ def test_reflection_nested_owns_strings() raises:
     for i in range(len(buf)):
         buf[i] = Byte(0)
     assert_equal(got.inner.label, "deep")
+
+
+@fieldwise_init
+struct OptScalars(Message):
+    var id: Int64
+    var nick: Optional[String]
+    var age: Optional[Int64]
+    var score: Optional[Float64]
+    var flag: Optional[Bool]
+
+    def __init__(out self):
+        self.id = 0
+        self.nick = None
+        self.age = None
+        self.score = None
+        self.flag = None
+
+
+def test_optional_all_present() raises:
+    var m = OptScalars(
+        7, Optional(String("ada")), Optional(Int64(42)),
+        Optional(Float64(-2.5)), Optional(Bool(True)),
+    )
+    var bytes = encode(m)
+    assert_equal(len(bytes), m.encoded_size())
+    var got = decode[OptScalars](Span(bytes))
+    assert_equal(got.id, 7)
+    assert_equal(got.nick.value(), String("ada"))
+    assert_equal(got.age.value(), 42)
+    assert_equal(got.score.value(), Float64(-2.5))
+    assert_equal(got.flag.value(), True)
+
+
+def test_optional_all_absent_emit_nothing() raises:
+    # Absent optionals must contribute no bytes: only the plain `id` is emitted.
+    var m = OptScalars()
+    m.id = 9
+    var bytes = encode(m)
+    assert_equal(len(bytes), m.encoded_size())
+    assert_equal(len(bytes), int64_field_size(1, 9))  # nothing but field 1
+    var got = decode[OptScalars](Span(bytes))
+    assert_equal(got.id, 9)
+    assert_false(got.nick.__bool__())
+    assert_false(got.age.__bool__())
+    assert_false(got.score.__bool__())
+    assert_false(got.flag.__bool__())
+
+
+def test_optional_partial() raises:
+    var m = OptScalars()
+    m.age = Optional(Int64(99))
+    var got = decode[OptScalars](Span(encode(m)))
+    assert_false(got.nick.__bool__())
+    assert_true(got.age.__bool__())
+    assert_equal(got.age.value(), 99)
+    assert_false(got.flag.__bool__())
+
+
+def test_optional_present_zero_is_written() raises:
+    # Presence is independent of value: a present-but-zero scalar is still
+    # written and decodes back as present, distinct from absent.
+    var m = OptScalars()
+    m.age = Optional(Int64(0))
+    m.flag = Optional(Bool(False))
+    assert_true(len(encode(m)) > int64_field_size(1, 0))  # zeros took bytes
+    var got = decode[OptScalars](Span(encode(m)))
+    assert_true(got.age.__bool__())
+    assert_equal(got.age.value(), 0)
+    assert_true(got.flag.__bool__())
+    assert_equal(got.flag.value(), False)
+
+
+def test_optional_defaults_from_empty() raises:
+    # A message absent from the wire keeps every optional as None.
+    var got = decode[OptScalars](Span(List[Byte]()))
+    assert_equal(got.id, 0)
+    assert_false(got.nick.__bool__())
+    assert_false(got.age.__bool__())
+
+
+@fieldwise_init
+struct OptWide(Message):
+    var i: Optional[Int]
+    var i32: Optional[Int32]
+    var u32: Optional[UInt32]
+    var u64: Optional[UInt64]
+    var f32: Optional[Float32]
+    var data: Optional[List[Byte]]
+
+    def __init__(out self):
+        self.i = None
+        self.i32 = None
+        self.u32 = None
+        self.u64 = None
+        self.f32 = None
+        self.data = None
+
+
+def test_optional_wide_types() raises:
+    var payload: List[Byte] = [Byte(0x00), Byte(0xFF), Byte(0x10)]
+    var m = OptWide(
+        Optional(Int(-5)), Optional(Int32(-1)), Optional(UInt32.MAX),
+        Optional(UInt64(123456789)), Optional(Float32(1.5)),
+        Optional(payload.copy()),
+    )
+    var bytes = encode(m)
+    assert_equal(len(bytes), m.encoded_size())
+    var got = decode[OptWide](Span(bytes))
+    assert_equal(got.i.value(), -5)
+    assert_equal(got.i32.value(), Int32(-1))
+    assert_equal(got.u32.value(), UInt32.MAX)
+    assert_equal(got.u64.value(), UInt64(123456789))
+    assert_equal(got.f32.value(), Float32(1.5))
+    assert_equal(len(got.data.value()), 3)
+    assert_equal(got.data.value()[1], Byte(0xFF))
+
+
+def test_optional_bytes_owns_its_data() raises:
+    # The decoded Optional[bytes] must copy, not view into the input buffer.
+    var m = OptWide()
+    m.data = Optional(List[Byte]([Byte(1), Byte(2), Byte(3)]))
+    var buf = encode(m)
+    var got = decode[OptWide](Span(buf))
+    for i in range(len(buf)):
+        buf[i] = Byte(0)
+    assert_true(got.data.__bool__())
+    assert_equal(got.data.value()[0], Byte(1))
+    assert_equal(got.data.value()[2], Byte(3))
+
+
+def test_optional_skips_unknown_field() raises:
+    # A present optional followed by an unknown field still decodes (forward
+    # compatibility): the unknown field 6 is skipped.
+    var m = OptScalars()
+    m.age = Optional(Int64(7))
+    var buf = encode(m)
+    write_int64(6, 999, buf)  # field the schema doesn't know
+    var got = decode[OptScalars](Span(buf))
+    assert_equal(got.age.value(), 7)
 
 
 def main() raises:
