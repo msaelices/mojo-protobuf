@@ -86,6 +86,44 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+PACKEDALL_ENC = """\
+from protobuf.message import encode
+from telem import PackedAll
+
+
+def main():
+    var p = PackedAll()
+    p.i32 = [Int32(-7), Int32(0), Int32(2147483647)]
+    p.u32 = [UInt32(5), UInt32(4000000000)]
+    p.s32 = [Int32(-42), Int32(42)]
+    p.s64 = [Int64(-123456789)]
+    p.flags = [True, False, True]
+    p.f32 = [Float32(1.5), Float32(-2.5)]
+    p.u64 = [UInt64(9876543210)]
+    _print_bytes(encode(p))
+"""
+
+PACKEDALL_DEC = """\
+from std.testing import assert_equal, assert_true, assert_false
+from protobuf.message import decode
+from telem import PackedAll
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[PackedAll](Span(data))
+    assert_equal(got.i32[0], Int32(-7))
+    assert_equal(got.i32[2], Int32(2147483647))
+    assert_equal(got.u32[1], UInt32(4000000000))
+    assert_equal(got.s32[0], Int32(-42))
+    assert_equal(got.s64[0], Int64(-123456789))
+    assert_true(got.flags[2])
+    assert_false(got.flags[1])
+    assert_equal(got.f32[1], Float32(-2.5))
+    assert_equal(got.u64[0], UInt64(9876543210))
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -177,6 +215,28 @@ def test_telem_forward_reference_encodes_mojo_decodes():
     pb = _pb("telem_pb2")
     t = pb.Telemetry(samples=[1, -2, 300, -400000], temps=[1.5, -2.5], id=99)
     _mojo_decodes(TELEM_DEC, t.SerializeToString())
+
+
+def test_packedall_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("telem_pb2")
+    p = pb.PackedAll.FromString(_mojo_encode(PACKEDALL_ENC))
+    assert list(p.i32) == [-7, 0, 2147483647], list(p.i32)
+    assert list(p.u32) == [5, 4000000000], list(p.u32)
+    assert list(p.s32) == [-42, 42], list(p.s32)
+    assert list(p.s64) == [-123456789], list(p.s64)
+    assert list(p.flags) == [True, False, True], list(p.flags)
+    assert list(p.f32) == [1.5, -2.5], list(p.f32)
+    assert list(p.u64) == [9876543210], list(p.u64)
+
+
+def test_packedall_forward_reference_encodes_mojo_decodes():
+    pb = _pb("telem_pb2")
+    p = pb.PackedAll(
+        i32=[-7, 0, 2147483647], u32=[5, 4000000000], s32=[-42, 42],
+        s64=[-123456789], flags=[True, False, True], f32=[1.5, -2.5],
+        u64=[9876543210],
+    )
+    _mojo_decodes(PACKEDALL_DEC, p.SerializeToString())
 
 
 def main():

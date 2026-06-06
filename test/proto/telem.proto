@@ -5,3 +5,14 @@ message Telemetry {
   repeated double temps = 2;
   int64 id = 3;
 }
+
+// Exercises the remaining packed scalar types (int64/double covered above).
+message PackedAll {
+  repeated int32 i32 = 1;
+  repeated uint32 u32 = 2;
+  repeated sint32 s32 = 3;
+  repeated sint64 s64 = 4;
+  repeated bool flags = 5;
+  repeated float f32 = 6;
+  repeated uint64 u64 = 7;
+}

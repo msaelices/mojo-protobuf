@@ -90,6 +90,22 @@ def test_repeated_string_unsupported():
     _expect_error(fd, "repeated")
 
 
+def test_map_unsupported():
+    # A map<K,V> lowers to a repeated nested message with options.map_entry; it
+    # must error with a map-specific message, not the generic repeated one.
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    entry = m.nested_type.add()
+    entry.name = "CountsEntry"
+    entry.options.map_entry = True
+    _add_field(entry, "key", 1, FD.TYPE_STRING)
+    _add_field(entry, "value", 2, FD.TYPE_INT32)
+    f = _add_field(m, "counts", 1, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    f.type_name = ".t.M.CountsEntry"
+    _expect_error(fd, "map")
+
+
 def test_enum_unsupported():
     fd = _file()
     m = fd.message_type.add()
