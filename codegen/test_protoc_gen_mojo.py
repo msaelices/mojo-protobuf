@@ -112,6 +112,42 @@ def test_cross_file_message_ref_unsupported():
     _expect_error(fd, "cross-file")
 
 
+def test_proto2_unsupported():
+    # protoc leaves `syntax` empty for proto2; an empty syntax must be rejected,
+    # otherwise a proto2 `optional` scalar would silently lose presence.
+    fd = descriptor_pb2.FileDescriptorProto()
+    fd.name = "t.proto"  # no syntax set -> proto2
+    fd.package = "t"
+    m = fd.message_type.add()
+    m.name = "M"
+    _add_field(m, "a", 1, FD.TYPE_INT32)
+    _expect_error(fd, "proto3")
+
+
+def test_struct_name_collision():
+    # A top-level `Outer_Inner` and a nested `Outer.Inner` both flatten to the
+    # same Mojo struct name; that must error, not emit a duplicate struct.
+    fd = _file()
+    fd.message_type.add().name = "Outer_Inner"
+    outer = fd.message_type.add()
+    outer.name = "Outer"
+    outer.nested_type.add().name = "Inner"
+    _expect_error(fd, "collides")
+
+
+def test_fields_emitted_in_number_order():
+    # Declaration order is intentionally non-monotonic; the wire methods must
+    # emit in ascending field number (canonical).
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    _add_field(m, "b", 5, FD.TYPE_INT64)
+    _add_field(m, "a", 2, FD.TYPE_INT64)
+    out = gen_file(fd)
+    enc = out[out.index("def encode_to"):out.index("def merge_field")]
+    assert enc.index("write_int64(2,") < enc.index("write_int64(5,"), enc
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

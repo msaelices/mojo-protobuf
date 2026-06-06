@@ -4,7 +4,7 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 from protobuf.message import decode, encode
 
-from example import Person, Point
+from example import AllTypes, Person, Point
 
 
 def test_codegen_roundtrip() raises:
@@ -39,6 +39,47 @@ def test_codegen_defaults_from_empty() raises:
     assert_false(got.active)
     assert_false(got.nickname)
     assert_equal(got.location.x, 0)
+
+
+def test_codegen_all_scalar_types() raises:
+    # Covers the scalar arms the Person fixture does not: double, float,
+    # uint32/64, sint32/64 (incl. negatives), and optional uint32/double/bytes.
+    var a = AllTypes()
+    a.d = -2.5
+    a.f = 1.5
+    a.i32 = -7
+    a.i64 = -1234567890123
+    a.u32 = UInt32.MAX
+    a.u64 = UInt64(9876543210)
+    a.s32 = -42  # ZigZag
+    a.s64 = -123456789
+    a.b = True
+    a.s = String("héllo 🌍")  # multi-byte UTF-8
+    a.by = [Byte(0), Byte(255)]
+    a.ou32 = Optional(UInt32(5))
+    a.od = None
+    a.ob = Optional(List[Byte]())  # present but empty
+
+    var data = encode(a)
+    assert_equal(len(data), a.encoded_size())  # generated size matches output
+    var got = decode[AllTypes](Span(data))
+    assert_equal(got.d, Float64(-2.5))
+    assert_equal(got.f, Float32(1.5))
+    assert_equal(got.i32, Int32(-7))
+    assert_equal(got.i64, Int64(-1234567890123))
+    assert_equal(got.u32, UInt32.MAX)
+    assert_equal(got.u64, UInt64(9876543210))
+    assert_equal(got.s32, Int32(-42))
+    assert_equal(got.s64, Int64(-123456789))
+    assert_true(got.b)
+    assert_equal(got.s, String("héllo 🌍"))
+    assert_equal(len(got.by), 2)
+    assert_equal(got.by[1], Byte(255))
+    assert_true(got.ou32)
+    assert_equal(got.ou32.value(), UInt32(5))
+    assert_false(got.od)  # absent stays None
+    assert_true(got.ob)  # present-but-empty is distinct from absent
+    assert_equal(len(got.ob.value()), 0)
 
 
 def main() raises:
