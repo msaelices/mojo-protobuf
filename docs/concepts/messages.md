@@ -95,8 +95,14 @@ Reflection walks the struct's fields and serializes each by its type, assigning
 **field number = the field's 1-based position**. Supported field types are
 `Int`, `Int32`, `Int64`, `UInt32`, `UInt64`, `Bool`, `String`, `Float32`,
 `Float64`, and `List[Byte]` (protobuf `bytes`); the machine-width `Int` maps to
-an `int64` varint. Any other type is a compile error (unless you override the
-methods). `decode` default-constructs the message, so
+an `int64` varint. A field whose type itself conforms to `Message` is encoded as
+a **nested message** (length-delimited), so message composition works out of the
+box. Any other type is a compile error (unless you override the methods).
+
+Truly recursive messages (a type that contains itself, e.g. a tree node) can't
+be plain fields — they'd be infinitely sized — so they need indirection (an
+`OwnedPointer` field) and an explicit override; the reflection default covers
+acyclic nesting. `decode` default-constructs the message, so
 fields absent from the wire keep their defaults — protobuf's missing-field
 semantics — and `encode` reserves the buffer with `encoded_size()`, so it does
 zero reallocations (see [`protobuf.size`](wire-format.md)).

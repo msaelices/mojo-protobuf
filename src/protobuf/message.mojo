@@ -53,9 +53,11 @@ from protobuf.size import (
     fixed64_field_size,
     int64_field_size,
     string_field_size,
+    tag_size,
     uint64_field_size,
+    varint_size,
 )
-from protobuf.wire import decode_tag
+from protobuf.wire import WIRE_LEN, decode_tag, encode_tag, encode_varint
 
 # Reflected type names, used to dispatch a struct field to the right codec.
 # This is collision-safe: builtins reflect to bare names (e.g. `Bool`,
@@ -82,8 +84,14 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
     `merge_field`, and `encoded_size` for free, with **field number = the field's
     1-based position**. Supported field types: `Int`, `Int32`, `Int64`, `UInt32`,
     `UInt64`, `Bool`, `String`, `Float32`, `Float64`, and `List[Byte]` (protobuf
-    `bytes`). `Int`, the machine-width integer, maps to an `int64` varint. Any
-    other type is a compile error unless the methods are overridden.
+    `bytes`). `Int`, the machine-width integer, maps to an `int64` varint. A field
+    whose type itself conforms to `Message` is encoded as a **nested message**
+    (length-delimited). Any other type is a compile error unless the methods are
+    overridden.
+
+    Truly recursive messages (a type that contains itself) need indirection
+    (e.g. an `OwnedPointer` field) and an explicit override; the reflection
+    default only handles acyclic nesting.
 
     Override the three methods for custom/non-sequential field numbers, types
     the reflection path doesn't cover, or proto3 niceties (wire-type validation
@@ -122,6 +130,9 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                 total += fixed32_field_size(idx + 1)
             elif name == _FLOAT64_NAME:
                 total += fixed64_field_size(idx + 1)
+            elif conforms_to(field_type, Message):
+                var sub = _message_size(rebind[field_type](f))
+                total += tag_size(idx + 1) + varint_size(UInt64(sub)) + sub
             else:
                 comptime assert False, "Message: unsupported field type"
         return total
@@ -152,6 +163,13 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                 write_float(idx + 1, rebind[Float32](f), output)
             elif name == _FLOAT64_NAME:
                 write_double(idx + 1, rebind[Float64](f), output)
+            elif conforms_to(field_type, Message):
+                # A nested message is length-delimited: tag, byte length, bytes.
+                encode_tag(idx + 1, WIRE_LEN, output)
+                encode_varint(
+                    UInt64(_message_size(rebind[field_type](f))), output
+                )
+                _append_message(rebind[field_type](f), output)
             else:
                 comptime assert False, "Message: unsupported field type"
 
@@ -221,11 +239,30 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                     rebind[Float64](
                         reflect[Self].field_ref[idx](self)
                     ) = read_double(data, pos)
+                elif conforms_to(field_type, Message):
+                    rebind[field_type](
+                        reflect[Self].field_ref[idx](self)
+                    ) = decode[field_type](read_bytes(data, pos))
                 else:
                     comptime assert False, "Message: unsupported field type"
                 handled = True
         if not handled:
             skip_field(data, pos, wire_type)
+
+
+# Small `Message`-bound helpers, called from the `conforms_to(..., Message)`
+# branch of the reflection default so a nested-message field can be sized and
+# encoded generically. They are pure forwarders, so always inline them.
+@always_inline
+def _message_size[MessageType: Message](msg: MessageType) -> Int:
+    return msg.encoded_size()
+
+
+@always_inline
+def _append_message[
+    MessageType: Message
+](msg: MessageType, mut output: List[Byte]):
+    msg.encode_to(output)
 
 
 def encode[MessageType: Message](msg: MessageType) -> List[Byte]:

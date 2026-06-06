@@ -333,5 +333,111 @@ def test_reflection_bytes_last_wins() raises:
     assert_equal(got.data[0], Byte(2))
 
 
+@fieldwise_init
+struct Inner(Message):
+    var x: Int64
+    var label: String
+
+    def __init__(out self):
+        self.x = 0
+        self.label = String("")
+
+
+# `Outer` has a nested `Inner` field; both use the reflection defaults.
+@fieldwise_init
+struct Outer(Message):
+    var id: Int64
+    var inner: Inner
+
+    def __init__(out self):
+        self.id = 0
+        self.inner = Inner()
+
+
+def test_reflection_nested_roundtrip() raises:
+    var o = Outer(7, Inner(42, "hi"))
+    var bytes = encode(o)
+    assert_equal(len(bytes), o.encoded_size())  # nested size agrees
+    var got = decode[Outer](Span(bytes))
+    assert_equal(got.id, 7)
+    assert_equal(got.inner.x, 42)
+    assert_equal(got.inner.label, "hi")
+
+
+def test_reflection_nested_defaults() raises:
+    var got = decode[Outer](Span(List[Byte]()))
+    assert_equal(got.id, 0)
+    assert_equal(got.inner.x, 0)
+    assert_equal(got.inner.label, "")
+
+
+def test_reflection_nested_skips_unknown() raises:
+    var buf = List[Byte]()
+    write_string(9, "from a newer schema", buf)  # unknown to Outer
+    var sub = encode(Inner(5, "deep"))
+    write_bytes(2, Span(sub), buf)  # Outer.inner is field 2
+    var got = decode[Outer](Span(buf))
+    assert_equal(got.inner.x, 5)
+    assert_equal(got.inner.label, "deep")
+    assert_equal(got.id, 0)
+
+
+@fieldwise_init
+struct L3(Message):
+    var v: Int64
+
+    def __init__(out self):
+        self.v = 0
+
+
+@fieldwise_init
+struct L2(Message):
+    var c: L3
+
+    def __init__(out self):
+        self.c = L3()
+
+
+@fieldwise_init
+struct L1(Message):
+    var b: L2
+
+    def __init__(out self):
+        self.b = L2()
+
+
+def test_reflection_nested_three_deep() raises:
+    var got = decode[L1](Span(encode(L1(L2(L3(99))))))
+    assert_equal(got.b.c.v, 99)
+
+
+# A scalar field AFTER the nested one: the nested decode must consume exactly
+# its sub-span and not eat `tail`.
+@fieldwise_init
+struct Wrap(Message):
+    var inner: Inner
+    var tail: Int64
+
+    def __init__(out self):
+        self.inner = Inner()
+        self.tail = 0
+
+
+def test_reflection_nested_then_scalar() raises:
+    var got = decode[Wrap](Span(encode(Wrap(Inner(5, "x"), 77))))
+    assert_equal(got.inner.x, 5)
+    assert_equal(got.inner.label, "x")
+    assert_equal(got.tail, 77)
+
+
+def test_reflection_nested_owns_strings() raises:
+    # A nested message's String must be copied, not a view into the input.
+    var buf = encode(Outer(0, Inner(0, "deep")))
+    var got = decode[Outer](Span(buf))
+    for i in range(len(buf)):
+        buf[i] = Byte(0)
+    assert_equal(got.inner.label, "deep")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
