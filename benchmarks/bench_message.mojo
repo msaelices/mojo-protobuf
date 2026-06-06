@@ -27,6 +27,22 @@ struct Small(Message):
 
 
 @fieldwise_init
+struct ManyInts(Message):
+    var a: Int64
+    var b: Int64
+    var c: Int64
+    var d: Int64
+    var e: Int64
+    var f: Int64
+    var g: Int64
+    var h: Int64
+
+    def __init__(out self):
+        self.a = 0; self.b = 0; self.c = 0; self.d = 0
+        self.e = 0; self.f = 0; self.g = 0; self.h = 0
+
+
+@fieldwise_init
 struct Inner(Message):
     var a: Int64
     var b: Int64
@@ -199,6 +215,22 @@ def bench_encoded_size_large(mut b: Bencher) raises:
     keep(Bool(msg.name))
 
 
+@parameter
+def bench_decode_many_ints(mut b: Bencher) raises:
+    var data = encode(
+        ManyInts(1, -2, 300, -4000, 50000, -600000, 7000000, -80000000)
+    )
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for _ in range(BATCH):
+            keep(decode[ManyInts](Span(data)).a)
+
+    b.iter[call_fn]()
+    keep(Bool(data))
+
+
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
     m.bench_function[bench_encode_small](BenchId("encode_small"))
@@ -208,5 +240,6 @@ def main() raises:
     m.bench_function[bench_encode_large](BenchId("encode_large"))
     m.bench_function[bench_encode_large_reused](BenchId("encode_large_reused"))
     m.bench_function[bench_decode_large](BenchId("decode_large"))
+    m.bench_function[bench_decode_many_ints](BenchId("decode_many_ints"))
     m.bench_function[bench_encoded_size_large](BenchId("encoded_size_large"))
     print(m)
