@@ -144,7 +144,8 @@ _UNSUPPORTED_TYPE = {
 #   vread:   (src, p) -> expression decoding one value from span `src` at `p`
 #   imports: runtime symbols needed
 class _Packed:
-    def __init__(self, elem, fixed, width, vwrite, vsize, vread, imports):
+    def __init__(self, elem, fixed, width, vwrite, vsize, vread, imports,
+                 helper=None):
         self.elem = elem
         self.fixed = fixed
         self.width = width
@@ -152,6 +153,9 @@ class _Packed:
         self.vsize = vsize
         self.vread = vread
         self.imports = imports
+        # For plain varint ints, a SIMD-accelerated whole-blob decode helper
+        # (read_packed_signed/unsigned[dtype]); None falls back to a scalar loop.
+        self.helper = helper
 
 
 PACKED = {
@@ -170,25 +174,29 @@ PACKED = {
         lambda v: f"encode_varint(UInt64({v}), output)",
         lambda v: f"varint_size(UInt64({v}))",
         lambda s, p: f"read_int64({s}, {p})",
-        {"fields": {"read_int64"}}),
+        {"fields": {"read_int64", "read_packed_signed"}},
+        helper="read_packed_signed[DType.int64]"),
     FD.TYPE_UINT64: _Packed(
         "UInt64", False, 0,
         lambda v: f"encode_varint({v}, output)",
         lambda v: f"varint_size({v})",
         lambda s, p: f"read_uint64({s}, {p})",
-        {"fields": {"read_uint64"}}),
+        {"fields": {"read_uint64", "read_packed_unsigned"}},
+        helper="read_packed_unsigned[DType.uint64]"),
     FD.TYPE_INT32: _Packed(
         "Int32", False, 0,
         lambda v: f"encode_varint(UInt64(Int64({v})), output)",
         lambda v: f"varint_size(UInt64(Int64({v})))",
         lambda s, p: f"Int32(read_int64({s}, {p}))",
-        {"fields": {"read_int64"}}),
+        {"fields": {"read_int64", "read_packed_signed"}},
+        helper="read_packed_signed[DType.int32]"),
     FD.TYPE_UINT32: _Packed(
         "UInt32", False, 0,
         lambda v: f"encode_varint(UInt64({v}), output)",
         lambda v: f"varint_size(UInt64({v}))",
         lambda s, p: f"UInt32(read_uint64({s}, {p}))",
-        {"fields": {"read_uint64"}}),
+        {"fields": {"read_uint64", "read_packed_unsigned"}},
+        helper="read_packed_unsigned[DType.uint32]"),
     FD.TYPE_SINT64: _Packed(
         "Int64", False, 0,
         lambda v: f"encode_varint(zigzag_encode({v}), output)",
@@ -352,15 +360,25 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
             encode_items.append((num, enc))
             size_items.append((num, sz))
             # Accept both the packed (LEN) and non-packed (one tag+value per
-            # element) forms on decode, per the proto3 spec.
+            # element) forms on decode, per the proto3 spec. Plain varint ints
+            # use the SIMD-accelerated whole-blob helper for the packed case.
+            if pk.helper is not None:
+                packed = (
+                    f"                {pk.helper}("
+                    f"read_bytes(data, pos), self.{name})"
+                )
+            else:
+                packed = (
+                    f"                var _blob_{name} = read_bytes(data, pos)\n"
+                    f"                var _p_{name} = 0\n"
+                    f"                while _p_{name} < len(_blob_{name}):\n"
+                    f"                    self.{name}.append("
+                    f"{pk.vread('_blob_' + name, '_p_' + name)})"
+                )
             decode += [
                 f"        if field_number == {num}:",
                 f"            if wire_type == WIRE_LEN:",
-                f"                var _blob_{name} = read_bytes(data, pos)",
-                f"                var _p_{name} = 0",
-                f"                while _p_{name} < len(_blob_{name}):",
-                f"                    self.{name}.append("
-                f"{pk.vread('_blob_' + name, '_p_' + name)})",
+                packed,
                 f"            else:",
                 f"                self.{name}.append("
                 f"{pk.vread('data', 'pos')})",
