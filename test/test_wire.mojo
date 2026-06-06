@@ -119,6 +119,21 @@ def test_varint_noncanonical_10th_byte() raises:
     assert_equal(got, UInt64(0x8000000000000000))
 
 
+def test_varint_fast_path_early_return() raises:
+    # A short varint with >= 10 bytes left takes the unchecked fast path; it
+    # must still return early on the terminating byte and advance `pos` exactly.
+    var buf = List[Byte]()
+    encode_varint(300, buf)  # 2-byte varint
+    encode_varint(7, buf)  # 1-byte varint
+    for _ in range(10):  # padding so each read sees >= 10 bytes remaining
+        buf.append(Byte(0))
+    var pos = 0
+    assert_equal(decode_varint(Span(buf), pos), 300)
+    assert_equal(pos, 2)
+    assert_equal(decode_varint(Span(buf), pos), 7)
+    assert_equal(pos, 3)
+
+
 def test_decode_tag_truncated_raises() raises:
     var data: List[Byte] = [Byte(0x80)]  # truncated varint
     var pos = 0
