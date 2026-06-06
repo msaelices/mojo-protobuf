@@ -252,11 +252,13 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
 
 # Small `Message`-bound helpers, called from the `conforms_to(..., Message)`
 # branch of the reflection default so a nested-message field can be sized and
-# encoded generically.
+# encoded generically. They are pure forwarders, so always inline them.
+@always_inline
 def _message_size[MessageType: Message](msg: MessageType) -> Int:
     return msg.encoded_size()
 
 
+@always_inline
 def _append_message[
     MessageType: Message
 ](msg: MessageType, mut output: List[Byte]):
