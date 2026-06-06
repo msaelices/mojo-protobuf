@@ -1,0 +1,7 @@
+syntax = "proto3";
+package telem;
+message Telemetry {
+  repeated int64 samples = 1;
+  repeated double temps = 2;
+  int64 id = 3;
+}

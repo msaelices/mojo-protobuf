@@ -18,7 +18,7 @@ test-wire = "mojo run -I src test/test_wire.mojo"
 test-fields = "mojo run -I src test/test_fields.mojo"
 test-message = "mojo run -I src test/test_message.mojo"
 test-size = "mojo run -I src test/test_size.mojo"
-codegen-gen = "protoc -I test/proto --plugin=protoc-gen-mojo=codegen/protoc-gen-mojo --mojo_out=test/gen example.proto"
+codegen-gen = "protoc -I test/proto --plugin=protoc-gen-mojo=codegen/protoc-gen-mojo --mojo_out=test/gen example.proto telem.proto"
 test-codegen-unit = "python3 codegen/test_protoc_gen_mojo.py"
 test-codegen = { cmd = "mojo run -I src -I test/gen test/test_codegen.mojo", depends-on = ["codegen-gen"] }
 test-interop = { cmd = "python3 test/test_interop.py", depends-on = ["codegen-gen"] }
