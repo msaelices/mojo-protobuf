@@ -149,6 +149,11 @@ def _collect_messages(msgs, scope, package, type_map, out):
     for m in msgs:
         full = f"{scope}.{m.name}"
         mojo = _struct_name(full, "." + package if package else ".")
+        if any(existing == mojo for existing, _ in out):
+            raise GenError(
+                f"message '{full}' flattens to Mojo struct name '{mojo}', which "
+                "collides with another message; rename one to disambiguate"
+            )
         type_map[full] = mojo
         out.append((mojo, m))
         _collect_messages(m.nested_type, full, package, type_map, out)
@@ -196,7 +201,7 @@ def gen_message(mojo_name, desc, type_map, imports):
         _check_field(f)
 
     decls, defaults = [], []
-    encode, size, decode = [], [], []
+    encode_items, size_items, decode = [], [], []
     imports.setdefault("message", set()).add("Message")
     imports.setdefault("fields", set()).add("skip_field")
 
@@ -210,16 +215,16 @@ def gen_message(mojo_name, desc, type_map, imports):
             decls.append(f"    var {name}: {mt}")
             defaults.append(f"        self.{name} = {mt}()")
             acc = f"self.{name}"
-            encode += [
+            encode_items.append((num, [
                 f"        encode_tag({num}, WIRE_LEN, output)",
                 f"        encode_varint(UInt64({acc}.encoded_size()), output)",
                 f"        {acc}.encode_to(output)",
-            ]
-            size += [
+            ]))
+            size_items.append((num, [
                 f"        var _sz_{name} = {acc}.encoded_size()",
                 f"        total += tag_size({num}) + varint_size("
                 f"UInt64(_sz_{name})) + _sz_{name}",
-            ]
+            ]))
             decode += [
                 f"        if field_number == {num}:",
                 f"            self.{name} = decode[{mt}](read_bytes(data, pos))",
@@ -242,14 +247,14 @@ def gen_message(mojo_name, desc, type_map, imports):
                 decls.append(f"    var {name}: Optional[{mt}]")
                 defaults.append(f"        self.{name} = None")
                 v = f"self.{name}.value()"
-                encode += [
+                encode_items.append((num, [
                     f"        if self.{name}:",
                     f"            write_bytes({num}, Span({v}), output)",
-                ]
-                size += [
+                ]))
+                size_items.append((num, [
                     f"        if self.{name}:",
                     f"            total += bytes_field_size({num}, Span({v}))",
-                ]
+                ]))
                 decode += [
                     f"        if field_number == {num}:",
                     f"            var _b_{name} = List[Byte]()",
@@ -259,11 +264,11 @@ def gen_message(mojo_name, desc, type_map, imports):
             else:
                 decls.append(f"    var {name}: {mt}")
                 defaults.append(f"        self.{name} = {mt}()")
-                encode.append(
-                    f"        write_bytes({num}, Span(self.{name}), output)")
-                size.append(
+                encode_items.append((num, [
+                    f"        write_bytes({num}, Span(self.{name}), output)"]))
+                size_items.append((num, [
                     f"        total += bytes_field_size({num}, "
-                    f"Span(self.{name}))")
+                    f"Span(self.{name}))"]))
                 decode += [
                     f"        if field_number == {num}:",
                     f"            var _b_{name} = List[Byte]()",
@@ -281,14 +286,14 @@ def gen_message(mojo_name, desc, type_map, imports):
             decls.append(f"    var {name}: Optional[{spec.mojo}]")
             defaults.append(f"        self.{name} = None")
             v = f"self.{name}.value()"
-            encode += [
+            encode_items.append((num, [
                 f"        if self.{name}:",
                 f"            {spec.write(num, v)}",
-            ]
-            size += [
+            ]))
+            size_items.append((num, [
                 f"        if self.{name}:",
                 f"            total += {spec.size(num, v)}",
-            ]
+            ]))
             decode += [
                 f"        if field_number == {num}:",
                 f"            self.{name} = Optional[{spec.mojo}]("
@@ -297,16 +302,25 @@ def gen_message(mojo_name, desc, type_map, imports):
         else:
             decls.append(f"    var {name}: {spec.mojo}")
             defaults.append(f"        self.{name} = {spec.default}")
-            encode.append(f"        {spec.write(num, f'self.{name}')}")
-            size.append(f"        total += {spec.size(num, f'self.{name}')}")
+            encode_items.append(
+                (num, [f"        {spec.write(num, f'self.{name}')}"]))
+            size_items.append(
+                (num, [f"        total += {spec.size(num, f'self.{name}')}"]))
             decode += [
                 f"        if field_number == {num}:",
                 f"            self.{name} = {spec.read()}",
             ]
 
+    # Emit fields on the wire in ascending field-number order (canonical), even
+    # if the .proto declares them out of order.
+    encode = [ln for _, blk in sorted(encode_items, key=lambda kv: kv[0])
+              for ln in blk]
+    size = [ln for _, blk in sorted(size_items, key=lambda kv: kv[0])
+            for ln in blk]
+
     # Turn the per-field decode `if` blocks into an elif chain + skip default.
     decode_body = []
-    for i, line in enumerate(decode):
+    for line in decode:
         if line.lstrip().startswith("if field_number ==") and decode_body:
             decode_body.append("        elif" + line.lstrip()[2:])
         else:
@@ -361,8 +375,11 @@ def _imports_block(imports):
 
 def gen_file(fd):
     """Generate the .mojo source for one FileDescriptorProto."""
-    if fd.syntax and fd.syntax != "proto3":
-        raise GenError(f"{fd.name}: only proto3 is supported (got {fd.syntax})")
+    # protoc leaves `syntax` empty for proto2, so require proto3 explicitly
+    # rather than only rejecting a non-empty non-proto3 value.
+    if fd.syntax != "proto3":
+        got = fd.syntax or "proto2"
+        raise GenError(f"{fd.name}: only proto3 is supported (got {got})")
 
     package = fd.package
     type_map = {}
