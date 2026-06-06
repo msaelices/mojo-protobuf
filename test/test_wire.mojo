@@ -134,6 +134,19 @@ def test_varint_fast_path_early_return() raises:
     assert_equal(pos, 3)
 
 
+def test_varint_fast_path_full_consume() raises:
+    # A full 10-byte varint with trailing bytes (so >= 10 always remain) keeps
+    # the fast path engaged through all 10 bytes and advances pos to exactly 10,
+    # independent of any other fixture's length.
+    var buf = List[Byte]()
+    encode_varint(UInt64.MAX, buf)  # 10 bytes
+    for _ in range(5):
+        buf.append(Byte(0x2A))  # trailing bytes
+    var pos = 0
+    assert_equal(decode_varint(Span(buf), pos), UInt64.MAX)
+    assert_equal(pos, 10)
+
+
 def test_decode_tag_truncated_raises() raises:
     var data: List[Byte] = [Byte(0x80)]  # truncated varint
     var pos = 0
