@@ -96,6 +96,40 @@ def bench_encode_small(mut b: Bencher) raises:
 
 
 @parameter
+def bench_encode_small_reused(mut b: Bencher) raises:
+    var msg = _small()
+    var buf = List[Byte](capacity=64)
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for _ in range(BATCH):
+            buf.clear()
+            msg.encode_to(buf)
+            keep(Bool(buf))
+
+    b.iter[call_fn]()
+    keep(Bool(msg.name))
+
+
+@parameter
+def bench_encode_large_reused(mut b: Bencher) raises:
+    var msg = _large()
+    var buf = List[Byte](capacity=512)
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for _ in range(BATCH):
+            buf.clear()
+            msg.encode_to(buf)
+            keep(Bool(buf))
+
+    b.iter[call_fn]()
+    keep(Bool(msg.name))
+
+
+@parameter
 def bench_decode_small(mut b: Bencher) raises:
     var data = encode(_small())
 
@@ -168,9 +202,11 @@ def bench_encoded_size_large(mut b: Bencher) raises:
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
     m.bench_function[bench_encode_small](BenchId("encode_small"))
+    m.bench_function[bench_encode_small_reused](BenchId("encode_small_reused"))
     m.bench_function[bench_decode_small](BenchId("decode_small"))
     m.bench_function[bench_roundtrip_small](BenchId("roundtrip_small"))
     m.bench_function[bench_encode_large](BenchId("encode_large"))
+    m.bench_function[bench_encode_large_reused](BenchId("encode_large_reused"))
     m.bench_function[bench_decode_large](BenchId("decode_large"))
     m.bench_function[bench_encoded_size_large](BenchId("encoded_size_large"))
     print(m)
