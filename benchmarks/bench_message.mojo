@@ -9,7 +9,7 @@ Run with `pixi run bench-message`.
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
-from protobuf.fields import read_bytes, read_int64, skip_field
+from protobuf.fields import read_bytes, read_packed_signed, skip_field
 from protobuf.message import Message, decode, encode
 from protobuf.size import tag_size, varint_size
 from protobuf.wire import encode_tag, encode_varint, WIRE_LEN
@@ -268,20 +268,37 @@ struct Packed(Message):
         mut pos: Int,
     ) raises:
         if field_number == 1 and wire_type == WIRE_LEN:
-            var blob = read_bytes(data, pos)
-            var p = 0
-            while p < len(blob):
-                self.xs.append(read_int64(blob, p))
+            read_packed_signed[DType.int64](read_bytes(data, pos), self.xs)
         else:
             skip_field(data, pos, wire_type)
 
 
 @parameter
 def bench_decode_packed_ints(mut b: Bencher) raises:
-    # Decoding a packed repeated varint blob: the workload SIMD will target.
+    # Mixed/large packed values (incl. negatives -> 10-byte): the SIMD prefix
+    # bails quickly, so this measures the scalar path stays neutral.
     var p = Packed()
     for i in range(64):
-        p.xs.append(Int64(i * 1000 - 32000))  # mixed sizes incl. negatives
+        p.xs.append(Int64(i * 1000 - 32000))
+    var data = encode(p)
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for _ in range(BATCH):
+            keep(len(decode[Packed](Span(data)).xs))
+
+    b.iter[call_fn]()
+    keep(Bool(data))
+
+
+@parameter
+def bench_decode_packed_small(mut b: Bencher) raises:
+    # Small (1-byte) packed values: the common case for numeric arrays, where
+    # the SIMD prefix bulk-extracts whole chunks.
+    var p = Packed()
+    for i in range(256):
+        p.xs.append(Int64(i % 100))
     var data = encode(p)
 
     @always_inline
@@ -305,5 +322,6 @@ def main() raises:
     m.bench_function[bench_decode_large](BenchId("decode_large"))
     m.bench_function[bench_decode_many_ints](BenchId("decode_many_ints"))
     m.bench_function[bench_decode_packed_ints](BenchId("decode_packed_ints"))
+    m.bench_function[bench_decode_packed_small](BenchId("decode_packed_small"))
     m.bench_function[bench_encoded_size_large](BenchId("encoded_size_large"))
     print(m)
