@@ -75,6 +75,25 @@ comptime _BYTES_NAME = reflect[List[Byte]].name()
 comptime _FLOAT32_NAME = reflect[Float32].name()
 comptime _FLOAT64_NAME = reflect[Float64].name()
 
+# `Optional[T]` field names, used to add proto3 explicit-presence semantics: an
+# absent (`None`) optional emits nothing, while a present one emits its inner
+# value exactly like the corresponding plain field (so a present-but-zero scalar
+# is still written, which is how presence is distinguished from absence on the
+# wire). Reflection cannot peel the inner `T` from an `Optional[T]` field type
+# generically (the type is erased to `AnyType` and `Optional`'s `T` sits behind
+# a `Variant`), so each supported inner type is matched by name, mirroring the
+# plain-field dispatch above.
+comptime _OPT_INT_NAME = reflect[Optional[Int]].name()
+comptime _OPT_INT32_NAME = reflect[Optional[Int32]].name()
+comptime _OPT_INT64_NAME = reflect[Optional[Int64]].name()
+comptime _OPT_UINT32_NAME = reflect[Optional[UInt32]].name()
+comptime _OPT_UINT64_NAME = reflect[Optional[UInt64]].name()
+comptime _OPT_BOOL_NAME = reflect[Optional[Bool]].name()
+comptime _OPT_STRING_NAME = reflect[Optional[String]].name()
+comptime _OPT_BYTES_NAME = reflect[Optional[List[Byte]]].name()
+comptime _OPT_FLOAT32_NAME = reflect[Optional[Float32]].name()
+comptime _OPT_FLOAT64_NAME = reflect[Optional[Float64]].name()
+
 
 trait Message(Defaultable, Movable, ImplicitlyDestructible):
     """A type that can be serialized to and from the protobuf wire format.
@@ -88,6 +107,14 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
     whose type itself conforms to `Message` is encoded as a **nested message**
     (length-delimited). Any other type is a compile error unless the methods are
     overridden.
+
+    Wrapping any of those scalar types in `Optional` gives proto3 **explicit
+    presence**: an absent (`None`) field emits nothing and decodes back to
+    `None`, while a present field is encoded exactly like its plain counterpart.
+    This distinguishes "unset" from a default value, so a present-but-zero scalar
+    (e.g. `Optional(Int64(0))`) is still written. `Optional` of a nested
+    `Message` is not handled by the reflection default (the inner type cannot be
+    recovered generically); use an override for that.
 
     Truly recursive messages (a type that contains itself) need indirection
     (e.g. an `OwnedPointer` field) and an explicit override; the reflection
@@ -130,6 +157,46 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                 total += fixed32_field_size(idx + 1)
             elif name == _FLOAT64_NAME:
                 total += fixed64_field_size(idx + 1)
+            elif name == _OPT_INT_NAME:
+                ref o = rebind[Optional[Int]](f)
+                if o:
+                    total += int64_field_size(idx + 1, Int64(o.value()))
+            elif name == _OPT_INT32_NAME:
+                ref o = rebind[Optional[Int32]](f)
+                if o:
+                    total += int64_field_size(idx + 1, Int64(o.value()))
+            elif name == _OPT_INT64_NAME:
+                ref o = rebind[Optional[Int64]](f)
+                if o:
+                    total += int64_field_size(idx + 1, o.value())
+            elif name == _OPT_UINT32_NAME:
+                ref o = rebind[Optional[UInt32]](f)
+                if o:
+                    total += uint64_field_size(idx + 1, UInt64(o.value()))
+            elif name == _OPT_UINT64_NAME:
+                ref o = rebind[Optional[UInt64]](f)
+                if o:
+                    total += uint64_field_size(idx + 1, o.value())
+            elif name == _OPT_BOOL_NAME:
+                ref o = rebind[Optional[Bool]](f)
+                if o:
+                    total += bool_field_size(idx + 1)
+            elif name == _OPT_STRING_NAME:
+                ref o = rebind[Optional[String]](f)
+                if o:
+                    total += string_field_size(idx + 1, o.value())
+            elif name == _OPT_BYTES_NAME:
+                ref o = rebind[Optional[List[Byte]]](f)
+                if o:
+                    total += bytes_field_size(idx + 1, Span(o.value()))
+            elif name == _OPT_FLOAT32_NAME:
+                ref o = rebind[Optional[Float32]](f)
+                if o:
+                    total += fixed32_field_size(idx + 1)
+            elif name == _OPT_FLOAT64_NAME:
+                ref o = rebind[Optional[Float64]](f)
+                if o:
+                    total += fixed64_field_size(idx + 1)
             elif conforms_to(field_type, Message):
                 var sub = _message_size(rebind[field_type](f))
                 total += tag_size(idx + 1) + varint_size(UInt64(sub)) + sub
@@ -163,6 +230,46 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                 write_float(idx + 1, rebind[Float32](f), output)
             elif name == _FLOAT64_NAME:
                 write_double(idx + 1, rebind[Float64](f), output)
+            elif name == _OPT_INT_NAME:
+                ref o = rebind[Optional[Int]](f)
+                if o:
+                    write_int64(idx + 1, Int64(o.value()), output)
+            elif name == _OPT_INT32_NAME:
+                ref o = rebind[Optional[Int32]](f)
+                if o:
+                    write_int64(idx + 1, Int64(o.value()), output)
+            elif name == _OPT_INT64_NAME:
+                ref o = rebind[Optional[Int64]](f)
+                if o:
+                    write_int64(idx + 1, o.value(), output)
+            elif name == _OPT_UINT32_NAME:
+                ref o = rebind[Optional[UInt32]](f)
+                if o:
+                    write_uint64(idx + 1, UInt64(o.value()), output)
+            elif name == _OPT_UINT64_NAME:
+                ref o = rebind[Optional[UInt64]](f)
+                if o:
+                    write_uint64(idx + 1, o.value(), output)
+            elif name == _OPT_BOOL_NAME:
+                ref o = rebind[Optional[Bool]](f)
+                if o:
+                    write_bool(idx + 1, o.value(), output)
+            elif name == _OPT_STRING_NAME:
+                ref o = rebind[Optional[String]](f)
+                if o:
+                    write_string(idx + 1, o.value(), output)
+            elif name == _OPT_BYTES_NAME:
+                ref o = rebind[Optional[List[Byte]]](f)
+                if o:
+                    write_bytes(idx + 1, Span(o.value()), output)
+            elif name == _OPT_FLOAT32_NAME:
+                ref o = rebind[Optional[Float32]](f)
+                if o:
+                    write_float(idx + 1, o.value(), output)
+            elif name == _OPT_FLOAT64_NAME:
+                ref o = rebind[Optional[Float64]](f)
+                if o:
+                    write_double(idx + 1, o.value(), output)
             elif conforms_to(field_type, Message):
                 # A nested message is length-delimited: tag, byte length, bytes.
                 encode_tag(idx + 1, WIRE_LEN, output)
@@ -239,6 +346,48 @@ trait Message(Defaultable, Movable, ImplicitlyDestructible):
                     rebind[Float64](
                         reflect[Self].field_ref[idx](self)
                     ) = read_double(data, pos)
+                elif name == _OPT_INT_NAME:
+                    rebind[Optional[Int]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[Int](Int(read_int64(data, pos)))
+                elif name == _OPT_INT32_NAME:
+                    rebind[Optional[Int32]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[Int32](Int32(read_int64(data, pos)))
+                elif name == _OPT_INT64_NAME:
+                    rebind[Optional[Int64]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[Int64](read_int64(data, pos))
+                elif name == _OPT_UINT32_NAME:
+                    rebind[Optional[UInt32]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[UInt32](UInt32(read_uint64(data, pos)))
+                elif name == _OPT_UINT64_NAME:
+                    rebind[Optional[UInt64]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[UInt64](read_uint64(data, pos))
+                elif name == _OPT_BOOL_NAME:
+                    rebind[Optional[Bool]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[Bool](read_bool(data, pos))
+                elif name == _OPT_STRING_NAME:
+                    rebind[Optional[String]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[String](read_string(data, pos))
+                elif name == _OPT_BYTES_NAME:
+                    var owned = List[Byte]()
+                    owned.extend(read_bytes(data, pos))
+                    rebind[Optional[List[Byte]]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[List[Byte]](owned^)
+                elif name == _OPT_FLOAT32_NAME:
+                    rebind[Optional[Float32]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[Float32](read_float(data, pos))
+                elif name == _OPT_FLOAT64_NAME:
+                    rebind[Optional[Float64]](
+                        reflect[Self].field_ref[idx](self)
+                    ) = Optional[Float64](read_double(data, pos))
                 elif conforms_to(field_type, Message):
                     rebind[field_type](
                         reflect[Self].field_ref[idx](self)
