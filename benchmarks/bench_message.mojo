@@ -9,7 +9,10 @@ Run with `pixi run bench-message`.
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
+from protobuf.fields import read_bytes, read_int64, skip_field
 from protobuf.message import Message, decode, encode
+from protobuf.size import tag_size, varint_size
+from protobuf.wire import encode_tag, encode_varint, WIRE_LEN
 
 comptime BATCH = 100
 
@@ -231,6 +234,66 @@ def bench_decode_many_ints(mut b: Bencher) raises:
     keep(Bool(data))
 
 
+@fieldwise_init
+struct Packed(Message):
+    var xs: List[Int64]  # repeated int64 = 1 (packed)
+
+    def __init__(out self):
+        self.xs = List[Int64]()
+
+    def encoded_size(self) -> Int:
+        var total = 0
+        if len(self.xs) > 0:
+            var n = 0
+            for v in self.xs:
+                n += varint_size(UInt64(v))
+            total += tag_size(1) + varint_size(UInt64(n)) + n
+        return total
+
+    def encode_to(self, mut output: List[Byte]):
+        if len(self.xs) > 0:
+            var n = 0
+            for v in self.xs:
+                n += varint_size(UInt64(v))
+            encode_tag(1, WIRE_LEN, output)
+            encode_varint(UInt64(n), output)
+            for v in self.xs:
+                encode_varint(UInt64(v), output)
+
+    def merge_field(
+        mut self,
+        field_number: Int,
+        wire_type: Int,
+        data: Span[Byte, _],
+        mut pos: Int,
+    ) raises:
+        if field_number == 1 and wire_type == WIRE_LEN:
+            var blob = read_bytes(data, pos)
+            var p = 0
+            while p < len(blob):
+                self.xs.append(read_int64(blob, p))
+        else:
+            skip_field(data, pos, wire_type)
+
+
+@parameter
+def bench_decode_packed_ints(mut b: Bencher) raises:
+    # Decoding a packed repeated varint blob: the workload SIMD will target.
+    var p = Packed()
+    for i in range(64):
+        p.xs.append(Int64(i * 1000 - 32000))  # mixed sizes incl. negatives
+    var data = encode(p)
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for _ in range(BATCH):
+            keep(len(decode[Packed](Span(data)).xs))
+
+    b.iter[call_fn]()
+    keep(Bool(data))
+
+
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
     m.bench_function[bench_encode_small](BenchId("encode_small"))
@@ -241,5 +304,6 @@ def main() raises:
     m.bench_function[bench_encode_large_reused](BenchId("encode_large_reused"))
     m.bench_function[bench_decode_large](BenchId("decode_large"))
     m.bench_function[bench_decode_many_ints](BenchId("decode_many_ints"))
+    m.bench_function[bench_decode_packed_ints](BenchId("decode_packed_ints"))
     m.bench_function[bench_encoded_size_large](BenchId("encoded_size_large"))
     print(m)
