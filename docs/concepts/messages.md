@@ -131,6 +131,28 @@ fields absent from the wire keep their defaults — protobuf's missing-field
 semantics — and `encode` reserves the buffer with `encoded_size()`, so it does
 zero reallocations (see [`protobuf.size`](wire-format.md)).
 
+### Zero-allocation encoding
+
+`encode(msg)` allocates a fresh, exactly-sized buffer on every call — convenient
+for one-shots. In a hot loop or when streaming many messages, that per-call
+allocation dominates: it is roughly **4x** the cost of the encoding itself for a
+small message. Reuse one buffer and call `encode_to` directly:
+
+```mojo
+var buf = List[Byte]()
+for msg in messages:
+    buf.clear()              # reuse the capacity, drop the contents
+    msg.encode_to(buf)
+    sink.write(buf)
+```
+
+`encode_to` appends, so it never allocates once the buffer is large enough;
+after the first message the buffer is sized and every subsequent encode is
+allocation-free. (To stream length-delimited messages into one buffer, write a
+length prefix and skip the `clear()` — `encode_to` keeps appending.) The
+benchmarks in [`benchmarks/bench_message.mojo`](../../benchmarks/bench_message.mojo)
+measure both paths.
+
 ### Overriding for control
 
 For non-sequential or sparse field numbers, types reflection doesn't cover
