@@ -28,18 +28,28 @@ from protobuf.message import Message, decode, encode
 struct Point(Message):
     var x: Int
     var y: Int
-    var label: String
 
     def __init__(out self):  # default-constructible, for decode()
         self.x = 0
         self.y = 0
+
+
+@fieldwise_init
+struct Line(Message):
+    var start: Point         # a nested message — also just works
+    var end: Point
+    var label: String
+
+    def __init__(out self):
+        self.start = Point()
+        self.end = Point()
         self.label = String("")
 
 
 def main() raises:
-    var data = encode(Point(3, 4, "origin"))   # serialize
-    var p = decode[Point](Span(data))          # deserialize
-    print(p.x, p.y, p.label)                   # 3 4 origin
+    var data = encode(Line(Point(0, 0), Point(3, 4), "diagonal"))  # serialize
+    var line = decode[Line](Span(data))                            # deserialize
+    print(line.label, line.end.x, line.end.y)                      # diagonal 3 4
 ```
 
 Need custom field numbers or types reflection doesn't cover? Override
