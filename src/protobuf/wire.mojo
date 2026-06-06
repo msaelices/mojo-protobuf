@@ -60,9 +60,25 @@ def decode_varint(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
         rather than rejected.
     """
     var result: UInt64 = 0
+    var n = len(data)
+    # Fast path: a varint is at most 10 bytes, so when at least 10 bytes remain
+    # no read can overrun. Drop the per-byte bounds check and read through the
+    # raw pointer (also skipping index normalization) for the common case.
+    if n - pos >= 10:
+        var ptr = data.unsafe_ptr()
+        var shift: UInt64 = 0
+        for i in range(10):
+            var b = ptr[pos + i]
+            result |= UInt64(b & 0x7F) << shift
+            if (b & 0x80) == 0:
+                pos += i + 1
+                return result
+            shift += 7
+        raise Error("decode_varint: varint exceeds 64 bits")
+    # Slow path near the end of the buffer: bounds-check every byte.
     var shift: UInt64 = 0
     while shift < 64:
-        if pos >= len(data):
+        if pos >= n:
             raise Error("decode_varint: truncated input")
         var b = data[pos]
         pos += 1
