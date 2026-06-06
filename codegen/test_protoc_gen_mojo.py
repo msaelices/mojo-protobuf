@@ -68,12 +68,42 @@ def test_happy_path():
     assert "if self.nick:" in out
 
 
-def test_repeated_unsupported():
+def test_repeated_packed_scalar_supported():
     fd = _file()
     m = fd.message_type.add()
     m.name = "M"
     _add_field(m, "xs", 1, FD.TYPE_INT64, label=FD.LABEL_REPEATED)
+    _add_field(m, "ds", 2, FD.TYPE_DOUBLE, label=FD.LABEL_REPEATED)
+    out = gen_file(fd)
+    assert "var xs: List[Int64]" in out
+    assert "var ds: List[Float64]" in out
+    assert "if wire_type == WIRE_LEN:" in out  # accepts packed
+    assert "self.xs.append(read_int64(" in out  # and non-packed
+
+
+def test_repeated_string_unsupported():
+    # Non-packed repeated (string/bytes/message) is a follow-up.
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    _add_field(m, "xs", 1, FD.TYPE_STRING, label=FD.LABEL_REPEATED)
     _expect_error(fd, "repeated")
+
+
+def test_map_unsupported():
+    # A map<K,V> lowers to a repeated nested message with options.map_entry; it
+    # must error with a map-specific message, not the generic repeated one.
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    entry = m.nested_type.add()
+    entry.name = "CountsEntry"
+    entry.options.map_entry = True
+    _add_field(entry, "key", 1, FD.TYPE_STRING)
+    _add_field(entry, "value", 2, FD.TYPE_INT32)
+    f = _add_field(m, "counts", 1, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    f.type_name = ".t.M.CountsEntry"
+    _expect_error(fd, "map")
 
 
 def test_enum_unsupported():

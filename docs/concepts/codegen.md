@@ -56,15 +56,26 @@ Mojo, decode in Python and vice versa).
 | `bytes` | `List[Byte]` | owns its data (copied out of the input) |
 | message `M` | `M` | length-delimited nested message |
 | `optional <scalar>` | `Optional[T]` | proto3 explicit presence |
+| `repeated <scalar>` | `List[T]` | proto3 **packed** (see below) |
 
 Nested message *definitions* (a `message` declared inside another) are flattened
 to top-level structs named `Outer_Inner`.
+
+### Packed repeated scalars
+
+A `repeated` numeric/bool field becomes a `List[T]` and is encoded **packed**
+(proto3 default): one length-delimited field holding the values back-to-back,
+no per-element tags (varint types as back-to-back varints, `float`/`double` as
+back-to-back fixed-width). On decode both forms are accepted — the packed
+length-delimited blob and the non-packed one-tag-per-element form — per the
+proto3 spec. The output is byte-identical to the reference protobuf.
 
 ## Not yet supported
 
 These raise a clear generator error rather than emitting wrong code:
 
-- `repeated` fields and `map<K, V>` (need `List[T]` in the runtime first)
+- `repeated string` / `repeated bytes` / `repeated <message>` (the non-packed
+  repeated kinds) and `map<K, V>`
 - `oneof`
 - `enum`
 - `fixed32/64`, `sfixed32/64`

@@ -10,11 +10,12 @@ Run via:
     protoc --plugin=protoc-gen-mojo=codegen/protoc-gen-mojo \
            --mojo_out=OUTDIR your.proto
 
-v1 scope mirrors the runtime: proto3 singular scalars (double, float, int32/64,
-uint32/64, sint32/64, bool, string, bytes), `optional` scalars (proto3 explicit
-presence -> `Optional[T]`), and singular nested messages. Unsupported features
-(repeated, map, oneof, enum, group, fixed/sfixed, proto2) raise a clear error so
-the generated code is never silently wrong.
+Supported: proto3 singular scalars (double, float, int32/64, uint32/64,
+sint32/64, bool, string, bytes), `optional` scalars (proto3 explicit presence ->
+`Optional[T]`), singular nested messages, and **packed `repeated` numeric
+scalars** (-> `List[T]`). Unsupported features (non-packed repeated of
+string/bytes/message, map, oneof, enum, group, fixed/sfixed, proto2) raise a
+clear error so the generated code is never silently wrong.
 """
 
 import sys
@@ -133,6 +134,82 @@ _UNSUPPORTED_TYPE = {
 }
 
 
+# Packed `repeated` scalar codec spec (proto3 default for numeric scalars: one
+# length-delimited field holding the values back-to-back, no per-element tags).
+#   elem:    Mojo element type (the List holds `List[elem]`)
+#   fixed:   True for fixed-width elements (size = width * count), False varint
+#   width:   byte width when fixed
+#   vwrite:  (v) -> value-only encode statement (appends to `output`)
+#   vsize:   (v) -> per-value byte-size expression (varint types only)
+#   vread:   (src, p) -> expression decoding one value from span `src` at `p`
+#   imports: runtime symbols needed
+class _Packed:
+    def __init__(self, elem, fixed, width, vwrite, vsize, vread, imports):
+        self.elem = elem
+        self.fixed = fixed
+        self.width = width
+        self.vwrite = vwrite
+        self.vsize = vsize
+        self.vread = vread
+        self.imports = imports
+
+
+PACKED = {
+    FD.TYPE_DOUBLE: _Packed(
+        "Float64", True, 8,
+        lambda v: f"encode_fixed[DType.float64]({v}, output)", lambda v: "8",
+        lambda s, p: f"read_double({s}, {p})",
+        {"wire": {"encode_fixed"}, "fields": {"read_double"}}),
+    FD.TYPE_FLOAT: _Packed(
+        "Float32", True, 4,
+        lambda v: f"encode_fixed[DType.float32]({v}, output)", lambda v: "4",
+        lambda s, p: f"read_float({s}, {p})",
+        {"wire": {"encode_fixed"}, "fields": {"read_float"}}),
+    FD.TYPE_INT64: _Packed(
+        "Int64", False, 0,
+        lambda v: f"encode_varint(UInt64({v}), output)",
+        lambda v: f"varint_size(UInt64({v}))",
+        lambda s, p: f"read_int64({s}, {p})",
+        {"fields": {"read_int64"}}),
+    FD.TYPE_UINT64: _Packed(
+        "UInt64", False, 0,
+        lambda v: f"encode_varint({v}, output)",
+        lambda v: f"varint_size({v})",
+        lambda s, p: f"read_uint64({s}, {p})",
+        {"fields": {"read_uint64"}}),
+    FD.TYPE_INT32: _Packed(
+        "Int32", False, 0,
+        lambda v: f"encode_varint(UInt64(Int64({v})), output)",
+        lambda v: f"varint_size(UInt64(Int64({v})))",
+        lambda s, p: f"Int32(read_int64({s}, {p}))",
+        {"fields": {"read_int64"}}),
+    FD.TYPE_UINT32: _Packed(
+        "UInt32", False, 0,
+        lambda v: f"encode_varint(UInt64({v}), output)",
+        lambda v: f"varint_size(UInt64({v}))",
+        lambda s, p: f"UInt32(read_uint64({s}, {p}))",
+        {"fields": {"read_uint64"}}),
+    FD.TYPE_SINT64: _Packed(
+        "Int64", False, 0,
+        lambda v: f"encode_varint(zigzag_encode({v}), output)",
+        lambda v: f"varint_size(zigzag_encode({v}))",
+        lambda s, p: f"read_sint64({s}, {p})",
+        {"wire": {"zigzag_encode"}, "fields": {"read_sint64"}}),
+    FD.TYPE_SINT32: _Packed(
+        "Int32", False, 0,
+        lambda v: f"encode_varint(zigzag_encode(Int64({v})), output)",
+        lambda v: f"varint_size(zigzag_encode(Int64({v})))",
+        lambda s, p: f"Int32(read_sint64({s}, {p}))",
+        {"wire": {"zigzag_encode"}, "fields": {"read_sint64"}}),
+    FD.TYPE_BOOL: _Packed(
+        "Bool", False, 0,
+        lambda v: f"encode_varint(UInt64(1) if {v} else UInt64(0), output)",
+        lambda v: "1",
+        lambda s, p: f"read_bool({s}, {p})",
+        {"fields": {"read_bool"}}),
+}
+
+
 def _merge_imports(into, extra):
     for mod, names in extra.items():
         into.setdefault(mod, set()).update(names)
@@ -144,10 +221,18 @@ def _struct_name(full_name, prefix):
     return rel.lstrip(".").replace(".", "_")
 
 
-def _collect_messages(msgs, scope, package, type_map, out):
-    """Walk messages + nested types, recording full-name -> Mojo struct name."""
+def _collect_messages(msgs, scope, package, type_map, out, map_entries):
+    """Walk messages + nested types, recording full-name -> Mojo struct name.
+
+    Synthetic map-entry messages (a `map<K, V>` field lowers to a repeated
+    nested message with `options.map_entry`) are recorded in `map_entries` and
+    not emitted as structs.
+    """
     for m in msgs:
         full = f"{scope}.{m.name}"
+        if m.options.map_entry:
+            map_entries.add(full)
+            continue
         mojo = _struct_name(full, "." + package if package else ".")
         if any(existing == mojo for existing, _ in out):
             raise GenError(
@@ -156,7 +241,9 @@ def _collect_messages(msgs, scope, package, type_map, out):
             )
         type_map[full] = mojo
         out.append((mojo, m))
-        _collect_messages(m.nested_type, full, package, type_map, out)
+        _collect_messages(
+            m.nested_type, full, package, type_map, out, map_entries
+        )
 
 
 def _is_bytes(field):
@@ -183,9 +270,18 @@ def _field_mojo_type(field, type_map):
     raise GenError(f"field '{field.name}': unsupported proto type {field.type}")
 
 
-def _check_field(field):
-    if field.label == FD.LABEL_REPEATED:
-        raise GenError(f"field '{field.name}': repeated is not supported in v1")
+def _check_field(field, map_entries):
+    if field.label == FD.LABEL_REPEATED and field.type not in PACKED:
+        if field.type == FD.TYPE_MESSAGE and field.type_name in map_entries:
+            raise GenError(
+                f"field '{field.name}': map<K, V> is not supported in v1"
+            )
+        # v1 supports only packed repeated scalars; string/bytes/message
+        # repeated (non-packed) is a follow-up.
+        raise GenError(
+            f"field '{field.name}': repeated of this type is not supported in "
+            "v1 (only packed numeric scalars)"
+        )
     if field.label == FD.LABEL_REQUIRED:
         raise GenError(f"field '{field.name}': proto2 required is not supported")
     # proto3 `optional` rides a synthetic oneof; a real oneof has no
@@ -194,11 +290,11 @@ def _check_field(field):
         raise GenError(f"field '{field.name}': oneof is not supported in v1")
 
 
-def gen_message(mojo_name, desc, type_map, imports):
+def gen_message(mojo_name, desc, type_map, imports, map_entries):
     """Return the Mojo source for one message struct."""
     fields = list(desc.field)
     for f in fields:
-        _check_field(f)
+        _check_field(f, map_entries)
 
     decls, defaults = [], []
     encode_items, size_items, decode = [], [], []
@@ -209,6 +305,67 @@ def gen_message(mojo_name, desc, type_map, imports):
         name = _ident(f.name)
         num = f.number
         optional = bool(f.proto3_optional)
+
+        if f.label == FD.LABEL_REPEATED:
+            pk = PACKED[f.type]  # _check_field already rejected unsupported
+            decls.append(f"    var {name}: List[{pk.elem}]")
+            defaults.append(f"        self.{name} = List[{pk.elem}]()")
+            _merge_imports(imports, pk.imports)
+            _merge_imports(imports, {
+                "wire": {"encode_tag", "encode_varint", "WIRE_LEN"},
+                "size": {"tag_size", "varint_size"},
+                "fields": {"read_bytes"},
+            })
+            enc = [f"        if len(self.{name}) > 0:"]
+            if pk.fixed:
+                enc += [
+                    f"            encode_tag({num}, WIRE_LEN, output)",
+                    f"            encode_varint("
+                    f"UInt64({pk.width} * len(self.{name})), output)",
+                    f"            for _v in self.{name}:",
+                    f"                {pk.vwrite('_v')}",
+                ]
+                sz = [
+                    f"        if len(self.{name}) > 0:",
+                    f"            var _n_{name} = {pk.width} * len(self.{name})",
+                    f"            total += tag_size({num}) + varint_size("
+                    f"UInt64(_n_{name})) + _n_{name}",
+                ]
+            else:
+                enc += [
+                    f"            var _n_{name} = 0",
+                    f"            for _v in self.{name}:",
+                    f"                _n_{name} += {pk.vsize('_v')}",
+                    f"            encode_tag({num}, WIRE_LEN, output)",
+                    f"            encode_varint(UInt64(_n_{name}), output)",
+                    f"            for _v in self.{name}:",
+                    f"                {pk.vwrite('_v')}",
+                ]
+                sz = [
+                    f"        if len(self.{name}) > 0:",
+                    f"            var _n_{name} = 0",
+                    f"            for _v in self.{name}:",
+                    f"                _n_{name} += {pk.vsize('_v')}",
+                    f"            total += tag_size({num}) + varint_size("
+                    f"UInt64(_n_{name})) + _n_{name}",
+                ]
+            encode_items.append((num, enc))
+            size_items.append((num, sz))
+            # Accept both the packed (LEN) and non-packed (one tag+value per
+            # element) forms on decode, per the proto3 spec.
+            decode += [
+                f"        if field_number == {num}:",
+                f"            if wire_type == WIRE_LEN:",
+                f"                var _blob_{name} = read_bytes(data, pos)",
+                f"                var _p_{name} = 0",
+                f"                while _p_{name} < len(_blob_{name}):",
+                f"                    self.{name}.append("
+                f"{pk.vread('_blob_' + name, '_p_' + name)})",
+                f"            else:",
+                f"                self.{name}.append("
+                f"{pk.vread('data', 'pos')})",
+            ]
+            continue
 
         if f.type == FD.TYPE_MESSAGE:
             mt = _field_mojo_type(f, type_map)
@@ -384,14 +541,20 @@ def gen_file(fd):
     package = fd.package
     type_map = {}
     ordered = []
+    map_entries = set()
     scope = "." + package if package else ""
-    _collect_messages(fd.message_type, scope, package, type_map, ordered)
+    _collect_messages(
+        fd.message_type, scope, package, type_map, ordered, map_entries
+    )
 
     if fd.enum_type:
         raise GenError(f"{fd.name}: top-level enums are not supported in v1")
 
     imports = {}
-    bodies = [gen_message(mojo, desc, type_map, imports) for mojo, desc in ordered]
+    bodies = [
+        gen_message(mojo, desc, type_map, imports, map_entries)
+        for mojo, desc in ordered
+    ]
 
     header = (
         f'"""Generated by protoc-gen-mojo from {fd.name}. Do not edit."""\n\n'

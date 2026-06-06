@@ -5,6 +5,7 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from protobuf.message import decode, encode
 
 from example import AllTypes, Person, Point
+from telem import PackedAll, Telemetry
 
 
 def test_codegen_roundtrip() raises:
@@ -80,6 +81,66 @@ def test_codegen_all_scalar_types() raises:
     assert_false(got.od)  # absent stays None
     assert_true(got.ob)  # present-but-empty is distinct from absent
     assert_equal(len(got.ob.value()), 0)
+
+
+def test_codegen_packed_repeated() raises:
+    # Packed repeated varint (samples) + packed repeated fixed64 (temps) +
+    # an interleaved scalar, all round-tripping through the generated struct.
+    var t = Telemetry()
+    t.samples = [Int64(1), Int64(-2), Int64(300), Int64(-400000)]
+    t.temps = [Float64(1.5), Float64(-2.5), Float64(3.14159)]
+    t.id = 99
+    var data = encode(t)
+    assert_equal(len(data), t.encoded_size())
+    var got = decode[Telemetry](Span(data))
+    assert_equal(len(got.samples), 4)
+    assert_equal(got.samples[0], 1)
+    assert_equal(got.samples[1], -2)
+    assert_equal(got.samples[3], -400000)
+    assert_equal(len(got.temps), 3)
+    assert_equal(got.temps[2], Float64(3.14159))
+    assert_equal(got.id, 99)
+
+
+def test_codegen_packed_repeated_empty() raises:
+    # Empty repeated fields emit nothing and decode back to empty lists.
+    var t = Telemetry()
+    t.id = 7
+    var data = encode(t)
+    assert_equal(len(data), t.encoded_size())
+    var got = decode[Telemetry](Span(data))
+    assert_equal(len(got.samples), 0)
+    assert_equal(len(got.temps), 0)
+    assert_equal(got.id, 7)
+
+
+def test_codegen_packed_all_types() raises:
+    # The packed scalar types not covered by Telemetry (int64/double): int32,
+    # uint32, sint32, sint64, bool, float, uint64, with negatives and extremes.
+    var p = PackedAll()
+    p.i32 = [Int32(-7), Int32(0), Int32.MAX]
+    p.u32 = [UInt32(0), UInt32.MAX]
+    p.s32 = [Int32(-42), Int32(42), Int32.MIN]  # ZigZag
+    p.s64 = [Int64(-123456789), Int64(123456789)]
+    p.flags = [True, False, True]
+    p.f32 = [Float32(1.5), Float32(-2.5)]
+    p.u64 = [UInt64(9876543210)]
+    var data = encode(p)
+    assert_equal(len(data), p.encoded_size())
+    var got = decode[PackedAll](Span(data))
+    assert_equal(len(got.i32), 3)
+    assert_equal(got.i32[0], Int32(-7))
+    assert_equal(got.i32[2], Int32.MAX)
+    assert_equal(got.u32[1], UInt32.MAX)
+    assert_equal(len(got.s32), 3)
+    assert_equal(got.s32[0], Int32(-42))
+    assert_equal(got.s32[2], Int32.MIN)
+    assert_equal(got.s64[0], Int64(-123456789))
+    assert_equal(len(got.flags), 3)
+    assert_true(got.flags[0])
+    assert_false(got.flags[1])
+    assert_equal(got.f32[1], Float32(-2.5))
+    assert_equal(got.u64[0], UInt64(9876543210))
 
 
 def main() raises:
