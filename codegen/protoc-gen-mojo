@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# protoc plugin entry point: reads CodeGeneratorRequest on stdin, writes the
+# CodeGeneratorResponse on stdout. Delegates to the Python implementation.
+exec python3 "$(dirname "$0")/protoc_gen_mojo.py"
