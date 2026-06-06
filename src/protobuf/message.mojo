@@ -83,6 +83,11 @@ comptime _FLOAT64_NAME = reflect[Float64].name()
 # generically (the type is erased to `AnyType` and `Optional`'s `T` sits behind
 # a `Variant`), so each supported inner type is matched by name, mirroring the
 # plain-field dispatch above.
+#
+# TODO: collapse these arms once Mojo reflection can return a field's concrete
+# type by index (`reflect[T].field_type[idx].T`). Then the inner `T` could be
+# peeled generically and a single helper would replace the per-type enumeration.
+# See https://github.com/modular/modular/issues/6645
 comptime _OPT_INT_NAME = reflect[Optional[Int]].name()
 comptime _OPT_INT32_NAME = reflect[Optional[Int32]].name()
 comptime _OPT_INT64_NAME = reflect[Optional[Int64]].name()
