@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package example;
+
+message Point {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message Person {
+  int64 id = 1;
+  string name = 5;            // non-sequential field number
+  bool active = 3;
+  optional string nickname = 7;
+  optional int64 age = 8;
+  bytes avatar = 9;
+  Point location = 10;        // singular nested message
+}
+
+// Exercises every supported scalar type plus optional variants.
+message AllTypes {
+  double d = 1;
+  float f = 2;
+  int32 i32 = 3;
+  int64 i64 = 4;
+  uint32 u32 = 5;
+  uint64 u64 = 6;
+  sint32 s32 = 7;
+  sint64 s64 = 8;
+  bool b = 9;
+  string s = 10;
+  bytes by = 11;
+  optional uint32 ou32 = 12;
+  optional double od = 13;
+  optional bytes ob = 14;
+}

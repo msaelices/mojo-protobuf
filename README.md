@@ -4,8 +4,9 @@ A pure-[Mojo](https://www.modular.com/mojo) implementation of
 [Protocol Buffers](https://protobuf.dev/).
 
 > **Status: work in progress.** The wire-format runtime, the typed field layer,
-> and a reflection-derived typed-message API are implemented; a `protoc` code
-> generator is next.
+> a reflection-derived typed-message API, and a `protoc` plugin
+> (`protoc-gen-mojo`) for proto3 scalars, `optional`, and nested messages are
+> implemented; repeated fields and enums are next.
 
 ## Why
 
@@ -60,6 +61,24 @@ Need custom field numbers or types reflection doesn't cover? Override
 `encode_to` / `merge_field` / `encoded_size` — see
 [the messages guide](./docs/concepts/messages.md).
 
+## Code generation from `.proto`
+
+`protoc-gen-mojo` is a [protoc](https://protobuf.dev/) plugin that emits Mojo
+`Message` structs from `.proto` files:
+
+```bash
+protoc -I proto \
+  --plugin=protoc-gen-mojo=codegen/protoc-gen-mojo \
+  --mojo_out=src your.proto
+```
+
+Each message becomes a struct conforming to `Message` with the real (possibly
+non-sequential) field numbers, so the generated code round-trips against the
+reference protobuf implementation on the wire. v1 covers proto3 singular scalars,
+`optional` scalars (explicit presence), and singular nested messages; repeated
+fields, maps, oneofs, and enums raise a clear generator error for now. See
+[the code generation guide](./docs/concepts/codegen.md).
+
 ## Documentation
 
 Design notes and concept guides live in [`docs/`](./docs/):
@@ -68,6 +87,8 @@ Design notes and concept guides live in [`docs/`](./docs/):
   field tags, and wire types.
 - [Messages and fields](./docs/concepts/messages.md) — typed fields, the decode
   loop, and forward compatibility via `skip_field`.
+- [Code generation](./docs/concepts/codegen.md) — the `protoc-gen-mojo` plugin,
+  the proto-to-Mojo type mapping, and what it emits.
 
 ## Roadmap
 
@@ -77,8 +98,10 @@ Design notes and concept guides live in [`docs/`](./docs/):
    and `skip_field` for unknown fields.
 3. ✅ **Typed-message API** (`protobuf.message`) — the `Message` trait with
    reflection-derived `encode`/`decode`/`encoded_size`, overridable per message.
-4. ⏳ **`protoc` plugin** — generate Mojo message structs from `.proto` files.
-5. **Generated bindings** — real schemas such as
+4. ✅ **`protoc` plugin** (`protoc-gen-mojo`) — generate Mojo message structs from
+   `.proto` files (proto3 scalars, `optional`, nested messages).
+5. ⏳ **Repeated fields, maps, enums, oneofs** — in the runtime and the generator.
+6. **Generated bindings** — real schemas such as
    [`livekit/protocol`](https://github.com/livekit/protocol).
 
 ## Development
