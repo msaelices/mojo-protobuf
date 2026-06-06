@@ -116,7 +116,7 @@ def test_codegen_packed_repeated_empty() raises:
 
 def test_codegen_packed_all_types() raises:
     # The packed scalar types not covered by Telemetry (int64/double): int32,
-    # uint32, sint32, sint64, bool, float, uint64, with negatives/zeros/extremes.
+    # uint32, sint32, sint64, bool, float, uint64, with negatives and extremes.
     var p = PackedAll()
     p.i32 = [Int32(-7), Int32(0), Int32.MAX]
     p.u32 = [UInt32(0), UInt32.MAX]
