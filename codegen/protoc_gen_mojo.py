@@ -13,9 +13,9 @@ Run via:
 Supported: proto3 singular scalars (double, float, int32/64, uint32/64,
 sint32/64, bool, string, bytes), `enum` (-> `Int32` + named constants),
 `optional` scalars (proto3 explicit presence -> `Optional[T]`), singular nested
-messages, and **packed `repeated` numeric scalars and enums** (-> `List[T]`).
-Unsupported features (non-packed repeated of string/bytes/message, map, oneof,
-group, fixed/sfixed, proto2) raise a clear error so the generated code is never
+messages, packed `repeated` numeric scalars/enums, and non-packed `repeated`
+string/bytes/message (-> `List[T]`). Unsupported features (map, oneof, group,
+fixed/sfixed, proto2) raise a clear error so the generated code is never
 silently wrong.
 """
 
@@ -294,18 +294,20 @@ def _field_mojo_type(field, type_map):
     raise GenError(f"field '{field.name}': unsupported proto type {field.type}")
 
 
+_NONPACKED_REPEATED = (FD.TYPE_STRING, FD.TYPE_BYTES, FD.TYPE_MESSAGE)
+
+
 def _check_field(field, map_entries):
-    if field.label == FD.LABEL_REPEATED and field.type not in PACKED:
+    if field.label == FD.LABEL_REPEATED:
         if field.type == FD.TYPE_MESSAGE and field.type_name in map_entries:
             raise GenError(
                 f"field '{field.name}': map<K, V> is not supported in v1"
             )
-        # v1 supports only packed repeated scalars; string/bytes/message
-        # repeated (non-packed) is a follow-up.
-        raise GenError(
-            f"field '{field.name}': repeated of this type is not supported in "
-            "v1 (only packed numeric scalars)"
-        )
+        if field.type not in PACKED and field.type not in _NONPACKED_REPEATED:
+            # e.g. repeated fixed/sfixed/group
+            raise GenError(
+                f"field '{field.name}': repeated of this type is not supported"
+            )
     if field.label == FD.LABEL_REQUIRED:
         raise GenError(f"field '{field.name}': proto2 required is not supported")
     # proto3 `optional` rides a synthetic oneof; a real oneof has no
@@ -330,7 +332,7 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
         num = f.number
         optional = bool(f.proto3_optional)
 
-        if f.label == FD.LABEL_REPEATED:
+        if f.label == FD.LABEL_REPEATED and f.type in PACKED:
             pk = PACKED[f.type]  # _check_field already rejected unsupported
             decls.append(f"    var {name}: List[{pk.elem}]")
             defaults.append(f"        self.{name} = List[{pk.elem}]()")
@@ -399,6 +401,79 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
                 f"                self.{name}.append("
                 f"{pk.vread('data', 'pos')})",
             ]
+            continue
+
+        if f.label == FD.LABEL_REPEATED:
+            # Non-packed repeated (string / bytes / message): each element is
+            # its own tag+value field, appended on each occurrence.
+            if f.type == FD.TYPE_STRING:
+                decls.append(f"    var {name}: List[String]")
+                defaults.append(f"        self.{name} = List[String]()")
+                _merge_imports(imports, {
+                    "fields": {"write_string", "read_string"},
+                    "size": {"string_field_size"},
+                })
+                encode_items.append((num, [
+                    f"        for ref _e in self.{name}:",
+                    f"            write_string({num}, _e, output)",
+                ]))
+                size_items.append((num, [
+                    f"        for ref _e in self.{name}:",
+                    f"            total += string_field_size({num}, _e)",
+                ]))
+                decode += [
+                    f"        if field_number == {num}:",
+                    f"            self.{name}.append(read_string(data, pos))",
+                ]
+            elif f.type == FD.TYPE_BYTES:
+                decls.append(f"    var {name}: List[List[Byte]]")
+                defaults.append(f"        self.{name} = List[List[Byte]]()")
+                _merge_imports(imports, {
+                    "fields": {"write_bytes", "read_bytes"},
+                    "size": {"bytes_field_size"},
+                })
+                encode_items.append((num, [
+                    f"        for ref _e in self.{name}:",
+                    f"            write_bytes({num}, Span(_e), output)",
+                ]))
+                size_items.append((num, [
+                    f"        for ref _e in self.{name}:",
+                    f"            total += bytes_field_size({num}, Span(_e))",
+                ]))
+                decode += [
+                    f"        if field_number == {num}:",
+                    f"            var _b_{name} = List[Byte]()",
+                    f"            _b_{name}.extend(read_bytes(data, pos))",
+                    f"            self.{name}.append(_b_{name}^)",
+                ]
+            else:  # TYPE_MESSAGE (map entries already rejected by _check_field)
+                mt = _field_mojo_type(f, type_map)
+                decls.append(f"    var {name}: List[{mt}]")
+                defaults.append(f"        self.{name} = List[{mt}]()")
+                _merge_imports(imports, {
+                    "wire": {"encode_tag", "encode_varint", "WIRE_LEN"},
+                    "size": {"tag_size", "varint_size"},
+                    "fields": {"read_bytes"},
+                    "message": {"decode"},
+                })
+                encode_items.append((num, [
+                    f"        for ref _e in self.{name}:",
+                    f"            encode_tag({num}, WIRE_LEN, output)",
+                    f"            encode_varint(UInt64(_e.encoded_size()), "
+                    f"output)",
+                    f"            _e.encode_to(output)",
+                ]))
+                size_items.append((num, [
+                    f"        for ref _e in self.{name}:",
+                    f"            var _sz = _e.encoded_size()",
+                    f"            total += tag_size({num}) + varint_size("
+                    f"UInt64(_sz)) + _sz",
+                ]))
+                decode += [
+                    f"        if field_number == {num}:",
+                    f"            self.{name}.append("
+                    f"decode[{mt}](read_bytes(data, pos)))",
+                ]
             continue
 
         if f.type == FD.TYPE_MESSAGE:
@@ -528,7 +603,9 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
     has_fields = bool(fields)
     if has_fields:
         lines.append("@fieldwise_init")
-    lines.append(f"struct {mojo_name}(Message):")
+    # Copyable so messages can be held in a `List` (repeated message fields) and
+    # copied like the value types they are; the encode path still reads by `ref`.
+    lines.append(f"struct {mojo_name}(Message, Copyable):")
     lines += decls if decls else []
     lines.append("")
     lines.append("    def __init__(out self):")
