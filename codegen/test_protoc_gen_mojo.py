@@ -69,6 +69,9 @@ def test_happy_path():
     assert "elif field_number == 7:" in out
     # presence: absent optional emits nothing
     assert "if self.nick:" in out
+    # the string default-omission guard uses byte_length(), not deprecated len()
+    assert "if self.name.byte_length() != 0:" in out
+    assert "len(self.name)" not in out
 
 
 def test_repeated_packed_scalar_supported():
