@@ -86,7 +86,8 @@ reference protobuf implementation on the wire. v1 covers proto3 singular scalars
 `optional` scalars (explicit presence), singular nested messages, enums
 (`-> Int32` + constants), and packed `repeated` numeric scalars (`List[T]`);
 non-packed repeated (string/bytes/message), maps, and oneofs raise a clear
-generator error for now. See [the code generation guide](./docs/concepts/codegen.md).
+generator error for now.
+See [the code generation guide](./docs/concepts/codegen.md).
 
 ## Performance
 
