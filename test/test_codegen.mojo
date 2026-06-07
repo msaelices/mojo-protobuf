@@ -356,6 +356,29 @@ def test_codegen_well_known_types() raises:
     assert_equal(got.seen["start"].seconds, Int64(1_699_999_999))
 
 
+def test_codegen_well_known_edge_cases() raises:
+    # Negative seconds/nanos round-trip (the int32 nanos is sign-extended like
+    # any int32), and an all-default Timestamp field is omitted entirely.
+    var e = Event()
+    e.id = String("x")
+    e.at = Timestamp(-5, -1)
+    var data = encode(e)
+    assert_equal(len(data), e.encoded_size())
+    var got = decode[Event](Span(data))
+    assert_equal(got.at.seconds, Int64(-5))
+    assert_equal(got.at.nanos, Int32(-1))
+
+    # at = default Timestamp() -> the singular message field is omitted, so only
+    # `id` (3 bytes: 0x0a 0x01 0x78) is on the wire.
+    var z = Event()
+    z.id = String("x")
+    var zd = encode(z)
+    assert_equal(len(zd), 3)
+    var zg = decode[Event](Span(zd))
+    assert_equal(zg.at.seconds, Int64(0))
+    assert_equal(zg.at.nanos, Int32(0))
+
+
 def test_codegen_negative_zero_preserved() raises:
     # proto3 detects the float/double default by bit pattern, not numeric
     # equality: -0.0 is non-default and must be written (and round-trip to -0.0,

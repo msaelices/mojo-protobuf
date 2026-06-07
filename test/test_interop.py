@@ -332,6 +332,18 @@ def main():
     _print_bytes(encode(e))
 """
 
+WKTNEG_ENC = """\
+from protobuf.message import encode
+from protobuf.well_known import Timestamp
+from wktime import Event
+
+
+def main():
+    var e = Event()
+    e.at = Timestamp(-5, -1)  # negative seconds and nanos
+    _print_bytes(encode(e))
+"""
+
 WKT_DEC = """\
 from std.testing import assert_equal
 from protobuf.message import decode
@@ -586,6 +598,17 @@ def test_wkt_reverse_mojo_encodes_reference_decodes():
     assert e.at.seconds == 1700000000 and e.at.nanos == 500
     assert [(d.seconds, d.nanos) for d in e.laps] == [(3, 250), (0, 100)]
     assert e.seen["start"].seconds == 1699999999
+
+
+def test_wkt_negative_byte_identical_to_reference():
+    # A Timestamp with negative seconds/nanos must be byte-identical to the
+    # reference (int32 nanos sign-extends to a 10-byte varint).
+    pb = _pb("wktime_pb2")
+    mojo_bytes = _mojo_encode(WKTNEG_ENC)
+    e = pb.Event()
+    e.at.seconds = -5
+    e.at.nanos = -1
+    assert mojo_bytes == e.SerializeToString(), (mojo_bytes, e.SerializeToString())
 
 
 def test_wkt_forward_reference_encodes_mojo_decodes():

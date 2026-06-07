@@ -6,11 +6,14 @@ happy path and that every unsupported feature fails loudly instead of emitting
 silently-wrong code.
 """
 
+import os
+
 from google.protobuf import descriptor_pb2
 
 from protoc_gen_mojo import gen_file, GenError, _register_types
 
 FD = descriptor_pb2.FieldDescriptorProto
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def _file(package="t"):
@@ -340,6 +343,43 @@ def test_unsupported_well_known_type_errors():
     f = _add_field(m, "x", 1, FD.TYPE_MESSAGE)
     f.type_name = ".google.protobuf.Any"
     _expect_error(fd, "well-known type")
+
+
+def test_user_timestamp_not_hijacked_by_builtin():
+    # A user message named Timestamp in a non-google package resolves to the
+    # local struct, not the builtin well-known type (the _WELL_KNOWN keys are
+    # the fully-qualified .google.protobuf.* names, matched exactly).
+    fd = _file(package="mypkg")
+    ts = fd.message_type.add()
+    ts.name = "Timestamp"
+    _add_field(ts, "x", 1, FD.TYPE_INT32)
+    m = fd.message_type.add()
+    m.name = "M"
+    f = _add_field(m, "t", 1, FD.TYPE_MESSAGE)
+    f.type_name = ".mypkg.Timestamp"
+    out = gen_file(fd)
+    assert "from protobuf.well_known" not in out
+    assert "struct Timestamp(" in out  # the user's struct is generated
+    assert "var t: Timestamp" in out
+
+
+def test_well_known_module_matches_generator():
+    # well_known.mojo is hand-maintained; guard against it drifting from what the
+    # generator emits for `{ int64 seconds = 1; int32 nanos = 2; }`.
+    fd = _file(package="google.protobuf")
+    ts = fd.message_type.add()
+    ts.name = "Timestamp"
+    _add_field(ts, "seconds", 1, FD.TYPE_INT64)
+    _add_field(ts, "nanos", 2, FD.TYPE_INT32)
+    body = gen_file(fd)
+    body = body[body.index("@fieldwise_init"):]  # the Timestamp struct onward
+    wk = open(os.path.join(HERE, "..", "src", "protobuf",
+                          "well_known.mojo")).read()
+    for line in body.splitlines():
+        if line.strip():
+            assert line in wk, (
+                f"well_known.mojo drifted from the generator: missing {line!r}"
+            )
 
 
 def test_undefined_type_ref_errors():
