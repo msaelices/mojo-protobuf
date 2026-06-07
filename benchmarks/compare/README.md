@@ -110,10 +110,12 @@ encoder), competitive-to-leading on the records.
   *protobuf-from-Python*, not upb's raw C parse in isolation.
 - `protobuf-go` is the pure-Go reference (reflection-based): not Go's fastest
   option, but what most Go code uses.
-- All harnesses **decode the same canonical bytes** (`participant.bin`, written
-  by the reference) and re-encode to byte-identical canonical output:
-  mojo-protobuf omits default-valued fields like the others, so all four encode
-  the same number of bytes.
+- All harnesses **decode the same canonical bytes** (written by the reference)
+  and re-encode to canonical output of the same size: mojo-protobuf omits
+  default-valued fields like the others. The bytes are identical for mojo, go,
+  and python; `prost` differs only in `map` entry order on `rtpstats`
+  (`HashMap` iteration is unspecified, as proto map order is) — the byte count,
+  and so the timing, is the same.
 - The `participant` and `rtpstats` schemas are carved from `livekit/protocol`'s
   `livekit_models.proto` (`ParticipantInfo`/`TrackInfo` and `RTPStats`, the
   latter minus its four `RTPDrift` fields to stay self-contained), with custom

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Cross-implementation decode/encode comparison on three messages: a packed
-# numeric array (packed.bin), a string-heavy record (person.bin), and a real
-# LiveKit ParticipantInfo (participant.bin), on the same wire bytes. Run inside
+# Cross-implementation decode/encode comparison on four messages: a packed
+# numeric array (packed.bin), a string-heavy record (person.bin), a real LiveKit
+# ParticipantInfo (participant.bin), and a numeric LiveKit RTPStats with
+# Timestamp well-known types (rtpstats.bin), on the same wire bytes. Run inside
 # the pixi env with Go + Rust on PATH:
 #   pixi run bash benchmarks/compare/run.sh
 set -euo pipefail
