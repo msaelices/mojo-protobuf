@@ -345,8 +345,13 @@ def _gen_map_field(f, name, num, map_entries, type_map, imports,
     """
     m = name
     entry = map_entries[f.type_name]
-    kf = next(x for x in entry.field if x.number == 1)
-    vf = next(x for x in entry.field if x.number == 2)
+    kf = next((x for x in entry.field if x.number == 1), None)
+    vf = next((x for x in entry.field if x.number == 2), None)
+    if kf is None or vf is None:
+        raise GenError(
+            f"field '{f.name}': malformed map entry '{f.type_name}' "
+            "(expected key=1 and value=2)"
+        )
     if kf.type not in _MAP_KEY_TYPES:
         raise GenError(
             f"field '{f.name}': map key type {kf.type} is not supported"
