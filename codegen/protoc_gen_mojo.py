@@ -321,17 +321,6 @@ class _Resolver:
 
     def message_type(self, field):
         fn = field.type_name
-        wkt = _WELL_KNOWN.get(fn)
-        if wkt is not None:
-            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
-            return wkt[1]
-        # google.protobuf well-known types arrive in the registry (protoc passes
-        # their descriptors) but are not generated, so resolving them would emit
-        # a dangling import. Reject until a builtin module backs them.
-        if fn.startswith(".google.protobuf."):
-            raise GenError(
-                f"field '{field.name}': well-known type '{fn}' is not supported"
-            )
         if fn in self.registry:
             mojo = self.registry[fn]
             src = self.file_of[fn]
@@ -340,9 +329,19 @@ class _Resolver:
                     _module_path(src), set()
                 ).add(mojo)
             return mojo
+        wkt = _WELL_KNOWN.get(fn)
+        if wkt is not None:
+            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
+            return wkt[1]
+        # Not generated. Give the well-known types a dedicated message; anything
+        # else is an ungenerated dependency (or a proto2 file).
+        if fn.startswith(".google.protobuf."):
+            raise GenError(
+                f"field '{field.name}': well-known type '{fn}' is not supported"
+            )
         raise GenError(
-            f"field '{field.name}' references type '{fn}', which is not defined "
-            "in any input file; pass the .proto that defines it to protoc too"
+            f"field '{field.name}' references type '{fn}', whose .proto is not "
+            "among the generation targets; pass that .proto to protoc too"
         )
 
 
@@ -944,7 +943,7 @@ def _enum_constants(fd, package):
 
     def walk(msgs, scope):
         for m in msgs:
-            if m.options.map_entry:  # synthetic; skipped like _collect_messages
+            if m.options.map_entry:  # synthetic; skipped like _register_types
                 continue
             full = f"{scope}.{m.name}"
             emit(m.enum_type, full)
@@ -971,7 +970,7 @@ def gen_file(fd, registry=None, file_of=None, map_entries=None):
         got = fd.syntax or "proto2"
         raise GenError(f"{fd.name}: only proto3 is supported (got {got})")
 
-    if registry is None:
+    if registry is None or file_of is None or map_entries is None:
         registry, file_of, map_entries = {}, {}, {}
         scope = "." + fd.package if fd.package else ""
         _register_types(
@@ -981,6 +980,7 @@ def gen_file(fd, registry=None, file_of=None, map_entries=None):
 
     package = fd.package
     ordered = _file_structs(fd)
+    struct_names = {mojo for mojo, _ in ordered}
     module_imports = {}
     ctx = _Resolver(registry, file_of, fd.name, module_imports)
 
@@ -990,12 +990,30 @@ def gen_file(fd, registry=None, file_of=None, map_entries=None):
         for mojo, desc in ordered
     ]
 
+    # A cross-file import's Mojo name must not clash with a locally generated
+    # struct or with an import from another module (flattened names are not
+    # globally unique); either would emit non-compiling Mojo.
+    imported_from = {}
+    for mod in sorted(module_imports):
+        for n in sorted(module_imports[mod]):
+            if n in struct_names:
+                raise GenError(
+                    f"imported type '{n}' (from '{mod}') collides with a struct "
+                    "defined in this file; rename one to disambiguate"
+                )
+            if n in imported_from:
+                raise GenError(
+                    f"type name '{n}' is imported from both "
+                    f"'{imported_from[n]}' and '{mod}'; rename one to "
+                    "disambiguate"
+                )
+            imported_from[n] = mod
+
     enums = _enum_constants(fd, package)
     # An enum constant must collide with neither a generated struct name nor
     # another constant, or the module would not compile. Fail loudly here rather
     # than emit broken Mojo (e.g. enum `A.B` value `C` and enum `A_B` value `C`
     # both flatten to `A_B_C`).
-    struct_names = {mojo for mojo, _ in ordered}
     seen = set()
     for name, _ in enums:
         if name in struct_names:
@@ -1028,20 +1046,24 @@ def main():
         plugin_pb2.CodeGeneratorResponse.FEATURE_PROTO3_OPTIONAL
     )
 
-    # Build a global type registry across every file in the request (the
-    # target files plus all their transitive imports) so cross-file message
-    # references resolve and emit the right `from <module> import ...` line.
+    # Build the type registry over the files being GENERATED only (not every
+    # transitive import). A cross-file reference resolves and emits a
+    # `from <module> import ...` line; a reference to a type whose .proto is not
+    # a generation target (an ungenerated dep, a proto2 file, or a well-known
+    # type) is rejected rather than emitting an import to a module that will
+    # never exist.
+    by_name = {f.name: f for f in request.proto_file}
     registry = {}
     file_of = {}
     map_entries = {}
-    for f in request.proto_file:
+    for proto_name in request.file_to_generate:
+        f = by_name[proto_name]
         scope = "." + f.package if f.package else ""
         _register_types(
             f.message_type, scope, f.package, f.name, registry, file_of,
             map_entries,
         )
 
-    by_name = {f.name: f for f in request.proto_file}
     for proto_name in request.file_to_generate:
         fd = by_name[proto_name]
         try:
