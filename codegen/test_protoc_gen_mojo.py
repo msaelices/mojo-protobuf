@@ -154,6 +154,21 @@ def test_map_invalid_key_type_unsupported():
     _expect_error(fd, "map key type")
 
 
+def test_map_malformed_entry_unsupported():
+    # A map_entry descriptor missing key=1/value=2 must raise GenError, not an
+    # uncaught StopIteration (defensive: real protoc always emits both).
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    entry = m.nested_type.add()
+    entry.name = "BadEntry"
+    entry.options.map_entry = True
+    _add_field(entry, "key", 1, FD.TYPE_STRING)  # value=2 deliberately omitted
+    f = _add_field(m, "bad", 1, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    f.type_name = ".t.M.BadEntry"
+    _expect_error(fd, "malformed map entry")
+
+
 def test_enum_supported():
     # proto3 enum -> Int32 field + comptime named-value constants.
     fd = _file()
