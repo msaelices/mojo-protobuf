@@ -275,8 +275,8 @@ struct Packed(Message):
 
 @parameter
 def bench_decode_packed_ints(mut b: Bencher) raises:
-    # Mixed/large packed values (incl. negatives -> 10-byte): the SIMD prefix
-    # bails quickly, so this measures the scalar path stays neutral.
+    # Large packed values (a negative first element -> 10-byte): the SIMD prefix
+    # bails on the first chunk, so this checks the scalar path stays neutral.
     var p = Packed()
     for i in range(64):
         p.xs.append(Int64(i * 1000 - 32000))
