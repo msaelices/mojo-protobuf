@@ -356,6 +356,11 @@ def _default_guard(field, acc):
         return acc
     if field.type == FD.TYPE_STRING:
         return f"len({acc}) != 0"
+    if field.type in (FD.TYPE_DOUBLE, FD.TYPE_FLOAT):
+        # proto3 detects the float/double default by bit pattern, not numeric
+        # equality: -0.0 (bits != 0) is written, +0.0 (bits 0) omitted. A plain
+        # `!= 0` would wrongly omit -0.0 (and round-trip it to +0.0).
+        return f"{acc}.to_bits() != 0"
     return f"{acc} != 0"  # numeric scalars + enum (default 0)
 
 
