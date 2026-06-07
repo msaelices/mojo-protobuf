@@ -57,10 +57,13 @@ Mojo, decode in Python and vice versa).
 | message `M` | `M` | length-delimited nested message |
 | `optional <scalar>` | `Optional[T]` | proto3 explicit presence |
 | `repeated <scalar>` | `List[T]` | proto3 **packed** (see below) |
+| `repeated string`/`bytes`/`M` | `List[String]` / `List[List[Byte]]` / `List[M]` | non-packed (see below) |
 | `enum E` | `Int32` | + `comptime E_VALUE = Int32(n)` constants |
 
 Nested message *definitions* (a `message` declared inside another) are flattened
-to top-level structs named `Outer_Inner`.
+to top-level structs named `Outer_Inner`. Generated structs are `Copyable`, so
+they can be held in a `List` and built with list literals
+(`r.tags = [Tag("k", "v")]`).
 
 ### Enums
 
@@ -80,12 +83,18 @@ back-to-back fixed-width). On decode both forms are accepted — the packed
 length-delimited blob and the non-packed one-tag-per-element form — per the
 proto3 spec. The output is byte-identical to the reference protobuf.
 
+### Non-packed repeated (string / bytes / message)
+
+`repeated string`, `repeated bytes`, and `repeated <message>` are **not** packed
+(proto3 only packs numeric scalars): each element is its own `tag + value` field,
+emitted once per element on encode and appended on each occurrence on decode.
+They map to `List[String]`, `List[List[Byte]]`, and `List[M]`.
+
 ## Not yet supported
 
 These raise a clear generator error rather than emitting wrong code:
 
-- `repeated string` / `repeated bytes` / `repeated <message>` (the non-packed
-  repeated kinds) and `map<K, V>`
+- `map<K, V>`
 - `oneof`
 - `fixed32/64`, `sfixed32/64`
 - `group` (a deprecated proto2 feature) and proto2 syntax in general
