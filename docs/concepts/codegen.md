@@ -155,14 +155,23 @@ whose `.proto` is not a generation target (an ungenerated dependency, a proto2
 file, or a well-known type), and a flattened struct name that would clash across
 imported files or with a local struct.
 
+### Well-known types
+
+`google.protobuf.Timestamp` and `google.protobuf.Duration` map to the builtin
+`protobuf.well_known` module (both are `{ int64 seconds = 1; int32 nanos = 2; }`)
+instead of being generated; a field of either type emits
+`from protobuf.well_known import Timestamp` / `Duration` and works as a singular,
+repeated, or map-value field. No need to pass `timestamp.proto`/`duration.proto`
+as a generation target. Other well-known types (`Any`, `Struct`, …) are not yet
+backed and raise a clear error.
+
 ## Not yet supported
 
 These raise a clear generator error rather than emitting wrong code:
 
 - `fixed32/64`, `sfixed32/64`
 - `group` (a deprecated proto2 feature) and proto2 syntax in general
-- well-known types (`google.protobuf.Timestamp`, etc.) — a cross-file reference
-  to one errors until a builtin module is provided
+- well-known types other than `Timestamp`/`Duration` (`Any`, `Struct`, …)
 
 ## Default-value omission
 

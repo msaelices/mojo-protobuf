@@ -11,6 +11,8 @@ from std.testing import (
 from protobuf.message import decode, encode
 
 from common import Geo, Unit_FEET, Unit_METERS
+from protobuf.well_known import Duration, Timestamp
+from wktime import Event
 from enums import Color_BLUE, Color_GREEN, Color_RED, Thing, Thing_Kind_PRIMARY
 from example import AllTypes, Person, Point
 from place import Place
@@ -333,6 +335,48 @@ def test_codegen_default_omission() raises:
     assert_equal(len(pd), pt.encoded_size())
     assert_equal(pd[0], Byte(16))  # field 2 (y), tag 0x10 — x (field 1) omitted
     assert_equal(decode[Point](Span(pd)).y, 5)
+
+
+def test_codegen_well_known_types() raises:
+    # google.protobuf.Timestamp/Duration map to the builtin protobuf.well_known
+    # module as singular, repeated, and map-value fields.
+    var e = Event()
+    e.id = String("evt1")
+    e.at = Timestamp(1_700_000_000, 500)
+    e.laps = [Duration(3, 250), Duration(0, 100)]
+    e.seen["start"] = Timestamp(1_699_999_999, 0)
+    var data = encode(e)
+    assert_equal(len(data), e.encoded_size())
+    var got = decode[Event](Span(data))
+    assert_equal(got.at.seconds, Int64(1_700_000_000))
+    assert_equal(got.at.nanos, Int32(500))
+    assert_equal(len(got.laps), 2)
+    assert_equal(got.laps[0].seconds, Int64(3))
+    assert_equal(got.laps[1].nanos, Int32(100))
+    assert_equal(got.seen["start"].seconds, Int64(1_699_999_999))
+
+
+def test_codegen_well_known_edge_cases() raises:
+    # Negative seconds/nanos round-trip (the int32 nanos is sign-extended like
+    # any int32), and an all-default Timestamp field is omitted entirely.
+    var e = Event()
+    e.id = String("x")
+    e.at = Timestamp(-5, -1)
+    var data = encode(e)
+    assert_equal(len(data), e.encoded_size())
+    var got = decode[Event](Span(data))
+    assert_equal(got.at.seconds, Int64(-5))
+    assert_equal(got.at.nanos, Int32(-1))
+
+    # at = default Timestamp() -> the singular message field is omitted, so only
+    # `id` (3 bytes: 0x0a 0x01 0x78) is on the wire.
+    var z = Event()
+    z.id = String("x")
+    var zd = encode(z)
+    assert_equal(len(zd), 3)
+    var zg = decode[Event](Span(zd))
+    assert_equal(zg.at.seconds, Int64(0))
+    assert_equal(zg.at.nanos, Int32(0))
 
 
 def test_codegen_negative_zero_preserved() raises:

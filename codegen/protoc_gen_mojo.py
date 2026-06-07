@@ -17,8 +17,9 @@ singular nested messages, packed `repeated` numeric scalars/enums, non-packed
 `repeated` string/bytes/message (-> `List[T]`), `map<K, V>` (-> `Dict[K, V]`),
 and `oneof` (each member -> `Optional[T]`, last-one-wins on decode). Fields whose
 type lives in an imported `.proto` resolve across files (emitting a
-`from <module> import ...`). Unsupported features (group, fixed/sfixed, proto2,
-well-known types) raise a clear error so the generated code is never silently
+`from <module> import ...`); `google.protobuf.Timestamp`/`Duration` map to the
+builtin `protobuf.well_known` module. Unsupported features (group, fixed/sfixed,
+proto2, other well-known types) raise a clear error so the code is never silently
 wrong.
 """
 
@@ -306,7 +307,13 @@ def _file_structs(fd):
 # Well-known google.protobuf message types map to a small builtin runtime
 # module rather than being generated. (None yet; cross-file refs to these still
 # raise a clear error pointing at the missing dependency.)
-_WELL_KNOWN = {}
+# google.protobuf well-known message types backed by a builtin runtime module
+# (protobuf.well_known) instead of being generated. full proto name -> (module,
+# Mojo struct name).
+_WELL_KNOWN = {
+    ".google.protobuf.Timestamp": ("protobuf.well_known", "Timestamp"),
+    ".google.protobuf.Duration": ("protobuf.well_known", "Duration"),
+}
 
 
 class _Resolver:
@@ -321,6 +328,12 @@ class _Resolver:
 
     def message_type(self, field):
         fn = field.type_name
+        # Well-known types always map to the builtin runtime module, regardless
+        # of whether protoc included their descriptor in the request.
+        wkt = _WELL_KNOWN.get(fn)
+        if wkt is not None:
+            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
+            return wkt[1]
         if fn in self.registry:
             mojo = self.registry[fn]
             src = self.file_of[fn]
@@ -329,12 +342,7 @@ class _Resolver:
                     _module_path(src), set()
                 ).add(mojo)
             return mojo
-        wkt = _WELL_KNOWN.get(fn)
-        if wkt is not None:
-            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
-            return wkt[1]
-        # Not generated. Give the well-known types a dedicated message; anything
-        # else is an ungenerated dependency (or a proto2 file).
+        # An unsupported well-known type vs an ungenerated dependency.
         if fn.startswith(".google.protobuf."):
             raise GenError(
                 f"field '{field.name}': well-known type '{fn}' is not supported"

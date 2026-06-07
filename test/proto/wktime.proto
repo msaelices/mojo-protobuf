@@ -1,0 +1,14 @@
+syntax = "proto3";
+package wkt;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// Well-known types map to the builtin protobuf.well_known module: a singular
+// Timestamp, a repeated Duration, and a Timestamp map value.
+message Event {
+  string id = 1;
+  google.protobuf.Timestamp at = 2;
+  repeated google.protobuf.Duration laps = 3;
+  map<string, google.protobuf.Timestamp> seen = 4;
+}

@@ -317,6 +317,52 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+WKT_ENC = """\
+from protobuf.message import encode
+from protobuf.well_known import Timestamp, Duration
+from wktime import Event
+
+
+def main():
+    var e = Event()
+    e.id = String("evt1")
+    e.at = Timestamp(1700000000, 500)
+    e.laps = [Duration(3, 250), Duration(0, 100)]
+    e.seen["start"] = Timestamp(1699999999, 0)
+    _print_bytes(encode(e))
+"""
+
+WKTNEG_ENC = """\
+from protobuf.message import encode
+from protobuf.well_known import Timestamp
+from wktime import Event
+
+
+def main():
+    var e = Event()
+    e.at = Timestamp(-5, -1)  # negative seconds and nanos
+    _print_bytes(encode(e))
+"""
+
+WKT_DEC = """\
+from std.testing import assert_equal
+from protobuf.message import decode
+from wktime import Event
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[Event](Span(data))
+    assert_equal(got.id, String("evt1"))
+    assert_equal(got.at.seconds, Int64(1700000000))
+    assert_equal(got.at.nanos, Int32(500))
+    assert_equal(len(got.laps), 2)
+    assert_equal(got.laps[0].seconds, Int64(3))
+    assert_equal(got.laps[1].nanos, Int32(100))
+    assert_equal(got.seen["start"].seconds, Int64(1699999999))
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -340,7 +386,8 @@ def _gen_reference():
         subprocess.run(
             ["protoc", "-I", "test/proto", "--python_out", _TMP,
              "example.proto", "telem.proto", "enums.proto", "rep.proto",
-             "maps.proto", "oneof.proto", "common.proto", "place.proto"],
+             "maps.proto", "oneof.proto", "common.proto", "place.proto",
+             "wktime.proto"],
             cwd=ROOT, check=True,
         )
         sys.path.insert(0, _TMP)
@@ -542,6 +589,37 @@ def test_place_forward_reference_encodes_mojo_decodes():
         pins={"gate": cpb.Geo(lat=5.5, lng=6.5)}, unit=cpb.METERS,
     )
     _mojo_decodes(PLACE_DEC, p.SerializeToString())
+
+
+def test_wkt_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("wktime_pb2")
+    e = pb.Event.FromString(_mojo_encode(WKT_ENC))
+    assert e.id == "evt1"
+    assert e.at.seconds == 1700000000 and e.at.nanos == 500
+    assert [(d.seconds, d.nanos) for d in e.laps] == [(3, 250), (0, 100)]
+    assert e.seen["start"].seconds == 1699999999
+
+
+def test_wkt_negative_byte_identical_to_reference():
+    # A Timestamp with negative seconds/nanos must be byte-identical to the
+    # reference (int32 nanos sign-extends to a 10-byte varint).
+    pb = _pb("wktime_pb2")
+    mojo_bytes = _mojo_encode(WKTNEG_ENC)
+    e = pb.Event()
+    e.at.seconds = -5
+    e.at.nanos = -1
+    assert mojo_bytes == e.SerializeToString(), (mojo_bytes, e.SerializeToString())
+
+
+def test_wkt_forward_reference_encodes_mojo_decodes():
+    pb = _pb("wktime_pb2")
+    e = pb.Event(id="evt1")
+    e.at.seconds = 1700000000
+    e.at.nanos = 500
+    e.laps.add(seconds=3, nanos=250)
+    e.laps.add(seconds=0, nanos=100)
+    e.seen["start"].seconds = 1699999999
+    _mojo_decodes(WKT_DEC, e.SerializeToString())
 
 
 def main():
