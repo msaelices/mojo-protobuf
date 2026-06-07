@@ -36,12 +36,12 @@ with Rust 1.80).
 
 `person` — string-heavy record:
 
-| implementation             | decode    | encode |
-|----------------------------|-----------|--------|
-| rust — prost (`--release`) | ~180      | ~50    |
-| python — upb (C backend)   | ~550      | ~250   |
-| go — protobuf-go           | ~700      | ~440   |
-| **mojo-protobuf (ours)**   | **~1000** | ~100   |
+| implementation             | decode   | encode |
+|----------------------------|----------|--------|
+| rust — prost (`--release`) | ~150     | ~45    |
+| go — protobuf-go           | ~500     | ~450   |
+| python — upb (C backend)   | ~660     | ~250   |
+| **mojo-protobuf (ours)**   | **~700** | ~100   |
 
 ## Takeaway
 
@@ -51,10 +51,11 @@ The two messages tell opposite stories, and both are honest:
   path (`read_packed_signed`) and there's no FFI boundary, so mojo-protobuf
   decodes the numeric array ~2x faster than `prost` and ~3x faster than the
   C-backed `upb`.
-- **String-heavy decode is where Mojo loses.** Decoding the `person` record is
-  the *slowest* of the four — each `String` field allocates and UTF-8-validates,
-  and the decode path isn't tuned the way the mature libraries are (`prost` is
-  ~5x faster here). This is the clearest "not yet" in the library.
+- **String-heavy decode is where Mojo trails.** On the `person` record Mojo is
+  now level with `upb` and `go` after an ASCII fast path that skips full UTF-8
+  validation for the common case, but still behind `prost` (~4x). The remaining
+  gap is per-field `String` allocation, which the mature libraries do more
+  cheaply — the next thing to tune.
 
 Encode is workload-dependent: mid-pack on the numeric array (behind `upb`'s tuned
 encoder), competitive on the small record.
