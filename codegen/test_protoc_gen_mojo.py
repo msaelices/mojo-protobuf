@@ -319,6 +319,18 @@ def test_cross_file_module_path_uses_slashes_as_dots():
     assert "from foo.bar import T" in out
 
 
+def test_well_known_type_unsupported():
+    # protoc passes google.protobuf descriptors in the request, so the registry
+    # would resolve them and emit a dangling import; reject with a clear error
+    # until a builtin module backs them.
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    f = _add_field(m, "at", 1, FD.TYPE_MESSAGE)
+    f.type_name = ".google.protobuf.Timestamp"
+    _expect_error(fd, "well-known type")
+
+
 def test_undefined_type_ref_errors():
     # A message field whose type is in no input file errors clearly (you must
     # pass the defining .proto to protoc too).
