@@ -4,6 +4,7 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 from protobuf.message import decode, encode
 
+from enums import Color_BLUE, Color_GREEN, Color_RED, Thing, Thing_Kind_PRIMARY
 from example import AllTypes, Person, Point
 from telem import PackedAll, Telemetry
 
@@ -141,6 +142,25 @@ def test_codegen_packed_all_types() raises:
     assert_false(got.flags[1])
     assert_equal(got.f32[1], Float32(-2.5))
     assert_equal(got.u64[0], UInt64(9876543210))
+
+
+def test_codegen_enums() raises:
+    # Enum -> Int32 + comptime named constants: singular, packed repeated, and
+    # optional enum fields, plus a nested enum.
+    var t = Thing()
+    t.color = Color_GREEN
+    t.palette = [Color_RED, Color_BLUE, Color_GREEN]  # packed repeated enum
+    t.accent = Optional(Color_BLUE)
+    t.kind = Thing_Kind_PRIMARY
+    var data = encode(t)
+    assert_equal(len(data), t.encoded_size())
+    var got = decode[Thing](Span(data))
+    assert_equal(got.color, Color_GREEN)
+    assert_equal(len(got.palette), 3)
+    assert_equal(got.palette[1], Color_BLUE)
+    assert_true(got.accent)
+    assert_equal(got.accent.value(), Color_BLUE)
+    assert_equal(got.kind, Thing_Kind_PRIMARY)
 
 
 def main() raises:

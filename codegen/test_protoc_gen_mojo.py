@@ -106,13 +106,25 @@ def test_map_unsupported():
     _expect_error(fd, "map")
 
 
-def test_enum_unsupported():
+def test_enum_supported():
+    # proto3 enum -> Int32 field + comptime named-value constants.
     fd = _file()
+    e = fd.enum_type.add()
+    e.name = "Color"
+    e.value.add(name="RED", number=0)
+    e.value.add(name="GREEN", number=1)
     m = fd.message_type.add()
     m.name = "M"
-    f = _add_field(m, "e", 1, FD.TYPE_ENUM)
-    f.type_name = ".t.E"
-    _expect_error(fd, "enum")
+    f = _add_field(m, "c", 1, FD.TYPE_ENUM)
+    f.type_name = ".t.Color"
+    g = _add_field(m, "cs", 2, FD.TYPE_ENUM, label=FD.LABEL_REPEATED)
+    g.type_name = ".t.Color"
+    out = gen_file(fd)
+    assert "comptime Color_RED = Int32(0)" in out
+    assert "comptime Color_GREEN = Int32(1)" in out
+    assert "var c: Int32" in out  # singular enum -> Int32
+    assert "var cs: List[Int32]" in out  # repeated enum -> packed List[Int32]
+    assert "read_packed_signed[DType.int32]" in out
 
 
 def test_oneof_unsupported():
