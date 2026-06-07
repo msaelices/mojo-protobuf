@@ -332,14 +332,57 @@ def test_well_known_type_unsupported():
 
 
 def test_undefined_type_ref_errors():
-    # A message field whose type is in no input file errors clearly (you must
-    # pass the defining .proto to protoc too).
+    # A message field whose type is not among the generation targets errors
+    # clearly (you must pass the defining .proto to protoc too).
     fd = _file()
     m = fd.message_type.add()
     m.name = "M"
     f = _add_field(m, "other", 1, FD.TYPE_MESSAGE)
     f.type_name = ".nope.Thing"
-    _expect_error(fd, "not defined in any input file")
+    _expect_error(fd, "not among the generation targets")
+
+
+def test_cross_file_name_collision_two_deps():
+    # Two dep files whose structs flatten to the same Mojo name, both used by
+    # one target, would emit `from a import Geo` + `from b import Geo` -> a Mojo
+    # ambiguity. Detect and error instead of emitting broken code.
+    a = descriptor_pb2.FileDescriptorProto()
+    a.name, a.syntax, a.package = "a.proto", "proto3", "a"
+    a.message_type.add().name = "Geo"
+    b = descriptor_pb2.FileDescriptorProto()
+    b.name, b.syntax, b.package = "b.proto", "proto3", "b"
+    b.message_type.add().name = "Geo"
+    t = descriptor_pb2.FileDescriptorProto()
+    t.name, t.syntax, t.package = "t.proto", "proto3", "t"
+    m = t.message_type.add()
+    m.name = "M"
+    _add_field(m, "ga", 1, FD.TYPE_MESSAGE).type_name = ".a.Geo"
+    _add_field(m, "gb", 2, FD.TYPE_MESSAGE).type_name = ".b.Geo"
+    try:
+        gen_file(t, *_registry(a, b, t))
+    except GenError as e:
+        assert "imported from both" in str(e), e
+        return
+    raise AssertionError("expected a cross-file name-collision GenError")
+
+
+def test_cross_file_name_collision_with_local():
+    # An imported type whose Mojo name equals a locally generated struct name.
+    dep = descriptor_pb2.FileDescriptorProto()
+    dep.name, dep.syntax, dep.package = "dep.proto", "proto3", "d"
+    dep.message_type.add().name = "Geo"
+    t = descriptor_pb2.FileDescriptorProto()
+    t.name, t.syntax, t.package = "t.proto", "proto3", "t"
+    t.message_type.add().name = "Geo"  # local Geo
+    m = t.message_type.add()
+    m.name = "M"
+    _add_field(m, "g", 1, FD.TYPE_MESSAGE).type_name = ".d.Geo"
+    try:
+        gen_file(t, *_registry(dep, t))
+    except GenError as e:
+        assert "collides with a struct defined in this file" in str(e), e
+        return
+    raise AssertionError("expected a local/import name-collision GenError")
 
 
 def test_proto2_unsupported():
