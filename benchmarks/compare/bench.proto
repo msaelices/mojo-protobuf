@@ -136,7 +136,9 @@ message ParticipantPermission {
   bool can_publish_data = 3;
   repeated TrackSource can_publish_sources = 9;
   bool hidden = 7;
+  bool recorder = 8;
   bool can_update_metadata = 10;
+  bool agent = 11;
   bool can_subscribe_metrics = 12;
   bool can_manage_agent_session = 13;
 }
