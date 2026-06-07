@@ -5,9 +5,9 @@ A pure-[Mojo](https://www.modular.com/mojo) implementation of
 
 > **Status: work in progress.** The wire-format runtime, the typed field layer,
 > a reflection-derived typed-message API, and a `protoc` plugin
-> (`protoc-gen-mojo`) for proto3 scalars, `optional`, and nested messages are
-> implemented, including packed `repeated` numeric scalars; non-packed repeated
-> and enums are next.
+> (`protoc-gen-mojo`) for proto3 scalars, `optional`, nested messages, packed
+> `repeated` numeric scalars, and enums are implemented; non-packed repeated,
+> maps, and oneofs are next.
 
 ## Why
 
@@ -83,10 +83,10 @@ protoc -I proto \
 Each message becomes a struct conforming to `Message` with the real (possibly
 non-sequential) field numbers, so the generated code round-trips against the
 reference protobuf implementation on the wire. v1 covers proto3 singular scalars,
-`optional` scalars (explicit presence), singular nested messages, and packed
-`repeated` numeric scalars (`List[T]`); non-packed repeated (string/bytes/
-message), maps, oneofs, and enums raise a clear generator error for now. See
-[the code generation guide](./docs/concepts/codegen.md).
+`optional` scalars (explicit presence), singular nested messages, enums
+(`-> Int32` + constants), and packed `repeated` numeric scalars (`List[T]`);
+non-packed repeated (string/bytes/message), maps, and oneofs raise a clear
+generator error for now. See [the code generation guide](./docs/concepts/codegen.md).
 
 ## Performance
 
@@ -132,8 +132,8 @@ Design notes and concept guides live in [`docs/`](./docs/):
    reflection-derived `encode`/`decode`/`encoded_size`, overridable per message.
 4. ✅ **`protoc` plugin** (`protoc-gen-mojo`) — generate Mojo message structs from
    `.proto` files (proto3 scalars, `optional`, nested messages).
-5. ⏳ **Repeated fields, maps, enums, oneofs** — packed `repeated` numeric
-   scalars done (generator); non-packed repeated, maps, enums, oneofs next.
+5. ⏳ **Repeated fields, maps, enums, oneofs** — packed `repeated` scalars and
+   enums done (generator); non-packed repeated, maps, oneofs next.
 6. **Generated bindings** — real schemas such as
    [`livekit/protocol`](https://github.com/livekit/protocol).
 
