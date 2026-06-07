@@ -26,7 +26,6 @@ while pos < len(data):
 ```
 """
 
-from std.bit import count_trailing_zeros
 from std.memory import pack_bits
 from std.sys import simd_width_of
 
@@ -260,6 +259,7 @@ def read_packed_signed[
     Uses the SIMD prefix fast path for the common small-value case, then the
     scalar two's-complement varint reader for the remainder.
     """
+    out.reserve(len(out) + len(blob))  # at most one value per byte
     var pos = _packed_simd_prefix[dtype](blob, out)
     while pos < len(blob):
         out.append(Scalar[dtype](read_int64(blob, pos)))
@@ -273,6 +273,7 @@ def read_packed_unsigned[
     Uses the SIMD prefix fast path for the common small-value case, then the
     scalar varint reader for the remainder.
     """
+    out.reserve(len(out) + len(blob))  # at most one value per byte
     var pos = _packed_simd_prefix[dtype](blob, out)
     while pos < len(blob):
         out.append(Scalar[dtype](read_uint64(blob, pos)))
