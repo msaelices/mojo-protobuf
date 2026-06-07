@@ -90,10 +90,9 @@ encoder), competitive-to-leading on the records.
 - `protobuf-go` is the pure-Go reference (reflection-based): not Go's fastest
   option, but what most Go code uses.
 - All harnesses **decode the same canonical bytes** (`participant.bin`, written
-  by the reference). On encode, mojo-protobuf does not yet omit default-valued
-  scalars, so its output is larger than canonical (315 B vs 235 B here); the
-  encode timing is still "serialize this message", and forward-decode is
-  unaffected. Default omission is a tracked follow-up.
+  by the reference) and re-encode to byte-identical canonical output:
+  mojo-protobuf omits default-valued fields like the others, so all four encode
+  the same number of bytes.
 - The `participant` schema is carved from `livekit/protocol`'s
   `livekit_models.proto` (ParticipantInfo + TrackInfo + their dependency
   closure), with custom `(logger.*)` and `deprecated` field options stripped —

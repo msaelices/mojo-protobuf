@@ -164,7 +164,17 @@ These raise a clear generator error rather than emitting wrong code:
 - well-known types (`google.protobuf.Timestamp`, etc.) — a cross-file reference
   to one errors until a builtin module is provided
 
-A *plain* singular message field is modeled as an always-encoded nested struct,
-so its presence is not distinguished from an empty message; mark it `optional`
-(or put it in a `oneof`) to get an `Optional[M]` with real presence. Canonical
-proto3 omission of default-valued scalars is still a follow-up.
+## Default-value omission
+
+Encoding follows the canonical proto3 rule: a *plain* singular field that holds
+its default value is omitted from the wire (a numeric/enum `0`, `false`, an empty
+string or bytes, and an all-default — zero-size — nested message). The output is
+byte-identical to the reference protobuf. `optional` fields, `oneof` members,
+`repeated`, and `map` are unaffected: an `optional`/`oneof` scalar set to its
+default *is* written (presence is tracked separately), and empty repeated/map
+fields were already omitted.
+
+One consequence: a plain singular message field has no presence bit, so an
+explicitly-set-but-empty message and an unset one both omit. Mark the field
+`optional` (or put it in a `oneof`) for an `Optional[M]` that distinguishes
+present-but-empty from absent.

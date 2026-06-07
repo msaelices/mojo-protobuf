@@ -81,8 +81,9 @@ protoc -I proto \
 ```
 
 Each message becomes a struct conforming to `Message` with the real (possibly
-non-sequential) field numbers, so the generated code round-trips against the
-reference protobuf implementation on the wire. v1 covers proto3 singular scalars,
+non-sequential) field numbers, so the generated code is byte-identical to the
+reference protobuf on the wire (default-valued fields are omitted, canonical
+proto3). v1 covers proto3 singular scalars,
 `optional` scalars and messages (explicit presence), singular nested messages,
 enums (`-> Int32` + constants), `repeated` fields (`List[T]`, packed and
 non-packed), `map<K, V>` (`Dict[K, V]`), and `oneof` (each member `Optional[T]`,

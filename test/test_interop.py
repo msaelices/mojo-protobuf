@@ -260,6 +260,29 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+MICRO_ENC = """\
+from protobuf.message import encode
+from example import Person
+
+
+def main():
+    var p = Person()
+    p.id = 42  # everything else left default -> omitted (canonical)
+    _print_bytes(encode(p))
+"""
+
+NEGZERO_ENC = """\
+from protobuf.message import encode
+from example import AllTypes
+
+
+def main():
+    var a = AllTypes()
+    a.d = Float64(-0.0)  # -0.0 is non-default (bit pattern) -> written
+    a.f = Float32(-0.0)
+    _print_bytes(encode(a))
+"""
+
 PLACE_ENC = """\
 from protobuf.message import encode
 from common import Geo
@@ -481,6 +504,23 @@ def test_oneof_forward_reference_encodes_mojo_decodes():
     m = pb.M(id=5, count=0, ok=True)
     assert m.WhichOneof("payload") == "count"
     _mojo_decodes(ONEOF_DEC, m.SerializeToString())
+
+
+def test_default_omission_byte_identical_to_reference():
+    # With default-omission, Mojo's encoding is byte-identical to the reference's
+    # canonical output (not just parseable): a mostly-default Person is `08 2a`.
+    pb = _pb("example_pb2")
+    mojo_bytes = _mojo_encode(MICRO_ENC)
+    assert mojo_bytes == pb.Person(id=42).SerializeToString(), mojo_bytes
+
+
+def test_negative_zero_byte_identical_to_reference():
+    # proto3 keeps -0.0 (default detection is by bit pattern); Mojo must too, or
+    # it diverges from the reference and round-trips -0.0 -> +0.0.
+    pb = _pb("example_pb2")
+    mojo_bytes = _mojo_encode(NEGZERO_ENC)
+    ref = pb.AllTypes(d=-0.0, f=-0.0).SerializeToString()
+    assert mojo_bytes == ref, (mojo_bytes, ref)
 
 
 def test_place_reverse_mojo_encodes_reference_decodes():

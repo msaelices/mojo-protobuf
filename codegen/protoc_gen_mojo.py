@@ -349,6 +349,21 @@ def _is_bytes(field):
     return field.type == FD.TYPE_BYTES
 
 
+def _default_guard(field, acc):
+    # proto3 omits a plain singular field that holds its default value. Returns
+    # the condition under which `acc` is non-default and must be written.
+    if field.type == FD.TYPE_BOOL:
+        return acc
+    if field.type == FD.TYPE_STRING:
+        return f"len({acc}) != 0"
+    if field.type in (FD.TYPE_DOUBLE, FD.TYPE_FLOAT):
+        # proto3 detects the float/double default by bit pattern, not numeric
+        # equality: -0.0 (bits != 0) is written, +0.0 (bits 0) omitted. A plain
+        # `!= 0` would wrongly omit -0.0 (and round-trip it to +0.0).
+        return f"{acc}.to_bits() != 0"
+    return f"{acc} != 0"  # numeric scalars + enum (default 0)
+
+
 def _field_mojo_type(field, ctx):
     if field.type == FD.TYPE_BYTES:
         return "List[Byte]"
@@ -749,15 +764,18 @@ def gen_message(mojo_name, desc, ctx, imports, map_entries):
                 decls.append(f"    var {name}: {mt}")
                 defaults.append(f"        self.{name} = {mt}()")
                 acc = f"self.{name}"
+                # proto3 omits an all-default (empty) singular message.
                 encode_items.append((num, [
-                    f"        encode_tag({num}, WIRE_LEN, output)",
-                    f"        encode_varint(UInt64({acc}.encoded_size()), "
-                    f"output)",
-                    f"        {acc}.encode_to(output)",
+                    f"        var _sz_{name} = {acc}.encoded_size()",
+                    f"        if _sz_{name} > 0:",
+                    f"            encode_tag({num}, WIRE_LEN, output)",
+                    f"            encode_varint(UInt64(_sz_{name}), output)",
+                    f"            {acc}.encode_to(output)",
                 ]))
                 size_items.append((num, [
                     f"        var _sz_{name} = {acc}.encoded_size()",
-                    f"        total += tag_size({num}) + varint_size("
+                    f"        if _sz_{name} > 0:",
+                    f"            total += tag_size({num}) + varint_size("
                     f"UInt64(_sz_{name})) + _sz_{name}",
                 ]))
                 decode += [
@@ -795,9 +813,12 @@ def gen_message(mojo_name, desc, ctx, imports, map_entries):
                 decls.append(f"    var {name}: {mt}")
                 defaults.append(f"        self.{name} = {mt}()")
                 encode_items.append((num, [
-                    f"        write_bytes({num}, Span(self.{name}), output)"]))
+                    f"        if len(self.{name}) != 0:",
+                    f"            write_bytes({num}, Span(self.{name}), "
+                    f"output)"]))
                 size_items.append((num, [
-                    f"        total += bytes_field_size({num}, "
+                    f"        if len(self.{name}) != 0:",
+                    f"            total += bytes_field_size({num}, "
                     f"Span(self.{name}))"]))
                 decode += [
                     f"        if field_number == {num}:",
@@ -832,10 +853,15 @@ def gen_message(mojo_name, desc, ctx, imports, map_entries):
         else:
             decls.append(f"    var {name}: {spec.mojo}")
             defaults.append(f"        self.{name} = {spec.default}")
-            encode_items.append(
-                (num, [f"        {spec.write(num, f'self.{name}')}"]))
-            size_items.append(
-                (num, [f"        total += {spec.size(num, f'self.{name}')}"]))
+            guard = _default_guard(f, f"self.{name}")
+            encode_items.append((num, [
+                f"        if {guard}:",
+                f"            {spec.write(num, f'self.{name}')}",
+            ]))
+            size_items.append((num, [
+                f"        if {guard}:",
+                f"            total += {spec.size(num, f'self.{name}')}",
+            ]))
             decode += [
                 f"        if field_number == {num}:",
                 f"            self.{name} = {spec.read()}",
