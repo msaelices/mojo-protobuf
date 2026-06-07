@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Decode/encode timing for the reference protobuf (upb C backend).
 
-Times two messages — a packed numeric array (`packed.bin`) and a string-heavy
-record (`person.bin`) — in a warm loop, reporting nanoseconds per op for
-comparison with the Mojo, Go, and Rust harnesses on the same bytes.
+Times three messages — a packed numeric array (`packed.bin`), a string-heavy
+record (`person.bin`), and a real LiveKit `ParticipantInfo` (`participant.bin`)
+— in a warm loop, reporting nanoseconds per op for comparison with the Mojo,
+Go, and Rust harnesses on the same bytes.
 """
 
 import os

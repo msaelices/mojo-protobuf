@@ -52,10 +52,10 @@ with Rust 1.80).
 
 | implementation             | decode    | encode   |
 |----------------------------|-----------|----------|
-| rust — prost (`--release`) | ~1160     | ~340     |
-| **mojo-protobuf (ours)**   | **~1700** | **~330** |
-| python — upb (C backend)   | ~1330     | ~620     |
-| go — protobuf-go           | ~4340     | ~2700    |
+| rust — prost (`--release`) | ~1000     | ~340     |
+| python — upb (C backend)   | ~1280     | ~620     |
+| **mojo-protobuf (ours)**   | **~1750** | **~330** |
+| go — protobuf-go           | ~4000     | ~2900    |
 
 ## Takeaway
 
@@ -71,10 +71,13 @@ The three messages tell complementary, honest stories:
   gap is per-field `String` allocation, which the mature libraries do more
   cheaply — the next thing to tune.
 - **On the real LiveKit message, Mojo beats `protobuf-go` on both sides:**
-  ~2.5x faster decode and ~8x faster encode than the library LiveKit's server
-  actually uses. It lands between `prost` and `upb` on decode and matches
-  `prost` on encode — a mix of nested-message and string work that plays to
-  neither extreme, and the headline result for the project's goal.
+  it **encodes ~6-8x faster** (a large, stable margin) and **decodes faster
+  too** — typically ~2x in clean runs, though Mojo's decode is the noisiest of
+  the four, so under machine load that margin narrows. On decode Mojo is still
+  behind `prost` and the C-backed `upb` (the same per-field `String` allocation
+  gap as `person`, now mixed with nested-message work); on encode it matches
+  `prost`. Beating the Go reference — the library LiveKit's server actually
+  uses — on a production message is the headline result for the project's goal.
 
 Encode is workload-dependent: mid-pack on the numeric array (behind `upb`'s tuned
 encoder), competitive-to-leading on the records.
@@ -95,5 +98,12 @@ encoder), competitive-to-leading on the records.
   `livekit_models.proto` (ParticipantInfo + TrackInfo + their dependency
   closure), with custom `(logger.*)` and `deprecated` field options stripped —
   options never change the wire format, so the bytes are real LiveKit bytes.
-- Numbers are min-of-runs on one machine and vary run to run; reproduce with
-  `run.sh`.
+- The harnesses time differently: Mojo uses `std.benchmark` (auto-calibrated
+  batches, min of 10 repetitions), the others a hand-rolled warm loop (min of 5
+  over 50k iters). The granularity differs, so treat small gaps as ties — the
+  cross-impl ratios here are large enough to survive it, but don't read precision
+  into them.
+- Numbers are min-of-runs on one machine and vary run to run. Mojo's
+  `participant` decode is the most variable (~1.6k ns clean, up to ~4k under
+  load) while `protobuf-go` sits steadily near ~4k; reproduce with `run.sh` and
+  read the ratios, not the absolute values.
