@@ -45,6 +45,8 @@ fn run<T: Message + Default>(label: &str, data: &[u8]) {
 fn main() {
     let packed = std::fs::read("../packed.bin").unwrap();
     let person = std::fs::read("../person.bin").unwrap();
+    let participant = std::fs::read("../participant.bin").unwrap();
     run::<Packed>("packed", &packed);
     run::<Person>("person", &person);
+    run::<ParticipantInfo>("participant", &participant);
 }

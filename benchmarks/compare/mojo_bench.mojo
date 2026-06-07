@@ -1,13 +1,21 @@
 """Decode/encode timing for mojo-protobuf on the shared messages.
 
-Builds the same values as `packed.bin` / `person.bin` (byte-identical), then
-times one decode / one encode per iteration for each. The `met` (mean) column
-printed below is ns/op; run.sh reformats it into the comparison table.
+Builds the same values as `packed.bin` / `person.bin` (byte-identical), plus a
+real LiveKit `ParticipantInfo` decoded from the canonical `participant.bin`,
+then times one decode / one encode per iteration for each. The `met` (mean)
+column printed below is ns/op; run.sh reformats it into the comparison table.
 """
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from protobuf.message import decode, encode
-from bench import Packed, Person
+from bench import Packed, Person, ParticipantInfo
+
+
+def _read(path: String) raises -> List[Byte]:
+    var f = open(path, "r")
+    var data = f.read_bytes()
+    f.close()
+    return data^
 
 
 def main() raises:
@@ -27,6 +35,11 @@ def main() raises:
     person.address.city = String("Cupertino")
     person.address.country = String("USA")
     var person_data = encode(person)
+
+    # Real LiveKit ParticipantInfo from the canonical wire bytes (same bytes the
+    # Go/Rust/Python harnesses decode), then re-encode the decoded message.
+    var part_data = _read("participant.bin")
+    var participant = decode[ParticipantInfo](Span(part_data))
 
     @parameter
     def packed_decode(mut b: Bencher) raises:
@@ -64,9 +77,29 @@ def main() raises:
         b.iter[f]()
         keep(Bool(person.name))
 
+    @parameter
+    def participant_decode(mut b: Bencher) raises:
+        @always_inline
+        @parameter
+        def f() raises:
+            keep(len(decode[ParticipantInfo](Span(part_data)).tracks))
+        b.iter[f]()
+        keep(Bool(part_data))
+
+    @parameter
+    def participant_encode(mut b: Bencher) raises:
+        @always_inline
+        @parameter
+        def f() raises:
+            keep(Bool(encode(participant)))
+        b.iter[f]()
+        keep(Bool(participant.sid))
+
     var m = Bench(BenchConfig(num_repetitions=10))
     m.bench_function[packed_decode](BenchId("packed_decode"))
     m.bench_function[packed_encode](BenchId("packed_encode"))
     m.bench_function[person_decode](BenchId("person_decode"))
     m.bench_function[person_encode](BenchId("person_encode"))
+    m.bench_function[participant_decode](BenchId("participant_decode"))
+    m.bench_function[participant_encode](BenchId("participant_encode"))
     print(m)
