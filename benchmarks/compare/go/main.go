@@ -28,25 +28,32 @@ func timeIt(fn func(), iters int) float64 {
 	return best
 }
 
-func main() {
-	data, _ := os.ReadFile("../packed.bin")
+func run(label string, data []byte, fresh func([]byte) (proto.Message, error)) {
 	iters := 50000
 	dec := timeIt(func() {
-		var m pb.Packed
-		if err := proto.Unmarshal(data, &m); err != nil {
+		if _, err := fresh(data); err != nil {
 			panic(err)
 		}
-		if len(m.Values) != 2000 {
-			panic("bad")
-		}
 	}, iters)
-	var msg pb.Packed
-	proto.Unmarshal(data, &msg)
+	msg, _ := fresh(data)
 	enc := timeIt(func() {
-		b, _ := proto.Marshal(&msg)
+		b, _ := proto.Marshal(msg)
 		if len(b) == 0 {
 			panic("bad")
 		}
 	}, iters)
-	fmt.Printf("go            decode %8.0f ns   encode %8.0f ns\n", dec, enc)
+	fmt.Printf("go(protobuf-go) %-7s decode %8.0f   encode %8.0f\n", label, dec, enc)
+}
+
+func main() {
+	packed, _ := os.ReadFile("../packed.bin")
+	person, _ := os.ReadFile("../person.bin")
+	run("packed", packed, func(d []byte) (proto.Message, error) {
+		m := &pb.Packed{}
+		return m, proto.Unmarshal(d, m)
+	})
+	run("person", person, func(d []byte) (proto.Message, error) {
+		m := &pb.Person{}
+		return m, proto.Unmarshal(d, m)
+	})
 }

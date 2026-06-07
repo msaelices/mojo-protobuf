@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Decode/encode timing for the reference protobuf (upb C backend).
 
-Decodes/encodes the shared `packed.bin` (2000 small packed int64 values) in a
-warm loop and reports nanoseconds per operation, for comparison with the Mojo,
-Go, and Rust harnesses on the same message.
+Times two messages — a packed numeric array (`packed.bin`) and a string-heavy
+record (`person.bin`) — in a warm loop, reporting nanoseconds per op for
+comparison with the Mojo, Go, and Rust harnesses on the same bytes.
 """
 
 import os
@@ -26,7 +26,7 @@ def _pb():
 
 
 def _time(fn, iters):
-    for _ in range(max(1, iters // 20)):  # warmup
+    for _ in range(max(1, iters // 20)):
         fn()
     best = float("inf")
     for _ in range(5):
@@ -37,32 +37,28 @@ def _time(fn, iters):
     return best
 
 
-def main():
-    pb = _pb()
-    data = open(os.path.join(HERE, "packed.bin"), "rb").read()
-    n = len(pb.Packed.FromString(data).values)
-    assert n == 2000, n
-
+def _bench(cls, data, touch, label):
     def decode():
-        m = pb.Packed.FromString(data)
-        # touch the field so a lazy backend can't skip parsing it
-        if len(m.values) != 2000:
-            raise SystemExit("bad")
+        touch(cls.FromString(data))
 
-    msg = pb.Packed.FromString(data)
+    msg = cls.FromString(data)
 
     def encode():
         if not msg.SerializeToString():
             raise SystemExit("bad")
 
     iters = 50_000
-    dec = _time(decode, iters)
-    enc = _time(encode, iters)
-    impl = __import__(
-        "google.protobuf.internal.api_implementation",
-        fromlist=["Type"],
-    ).Type()
-    print(f"python({impl})  decode {dec:8.0f} ns   encode {enc:8.0f} ns")
+    d = _time(decode, iters)
+    e = _time(encode, iters)
+    print(f"python(upb)   {label:7} decode {d:8.0f}   encode {e:8.0f}")
+
+
+def main():
+    pb = _pb()
+    packed = open(os.path.join(HERE, "packed.bin"), "rb").read()
+    person = open(os.path.join(HERE, "person.bin"), "rb").read()
+    _bench(pb.Packed, packed, lambda m: len(m.values), "packed")
+    _bench(pb.Person, person, lambda m: m.address.city, "person")
 
 
 if __name__ == "__main__":

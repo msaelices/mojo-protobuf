@@ -5,3 +5,21 @@ package cmp;
 message Packed {
   repeated int64 values = 1;
 }
+
+// A typical record: strings + mixed scalars + a nested message. No SIMD path —
+// dominated by String allocation/UTF-8 validation, where the mature libs lead.
+message Address {
+  string street = 1;
+  string city = 2;
+  string country = 3;
+}
+
+message Person {
+  int64 id = 1;
+  string name = 2;
+  string email = 3;
+  bool active = 4;
+  double balance = 5;
+  int32 age = 6;
+  Address address = 7;
+}
