@@ -13,9 +13,16 @@ A pure-[Mojo](https://www.modular.com/mojo) implementation of
 
 Protobuf is the lingua franca of gRPC and many service protocols (Kubernetes,
 LiveKit, data pipelines, …). There is no solid pure-Mojo implementation yet, so
-Mojo code that needs to speak these protocols has to fall back to Python interop.
-The goal of this project is to provide a native, fast, dependency-free protobuf
-runtime and code generator.
+Mojo code that needs to speak these protocols has to fall back to Python interop
+— paying the FFI/GIL tax and copying data across the language boundary on every
+message.
+
+A native implementation removes that boundary, and Mojo lets it be *fast* in
+ways a binding can't: **`comptime`** turns reflection into straight-line code at
+compile time (no runtime schema interpreter), and **SIMD** accelerates the
+bulk-numeric hot paths so protobuf data can flow directly into Mojo/MAX
+pipelines. The goal is a native, fast, dependency-free protobuf runtime and code
+generator. See [Performance](#performance).
 
 ## Example
 
@@ -80,6 +87,26 @@ reference protobuf implementation on the wire. v1 covers proto3 singular scalars
 `repeated` numeric scalars (`List[T]`); non-packed repeated (string/bytes/
 message), maps, oneofs, and enums raise a clear generator error for now. See
 [the code generation guide](./docs/concepts/codegen.md).
+
+## Performance
+
+Mojo lets a native codec be fast in ways an FFI binding can't:
+
+- **`comptime` reflection, zero runtime cost.** The `Message` defaults walk the
+  struct's fields with `comptime for`, so `encode` / `decode` / `encoded_size`
+  unroll into straight-line per-field code at compile time — no runtime
+  reflection or dispatch, and the field codecs inline into the message methods.
+
+- **SIMD on the bulk-numeric hot path.** Packed `repeated` numeric fields decode
+  through a SIMD fast path that extracts a chunk of small varints at once:
+  **~10x** faster than the scalar loop on small-value arrays (counts, ids,
+  enums, deltas), no regression on large ones, byte-identical to the reference.
+
+- **Allocation-aware.** `encode` reserves the buffer exactly from
+  `encoded_size()`; reuse a buffer with `encode_to` for allocation-free
+  encoding, and `bytes` fields decode as a zero-copy view.
+
+See the benchmarks in [`benchmarks/`](./benchmarks/) (`pixi run bench`).
 
 ## Documentation
 
