@@ -363,7 +363,7 @@ def _default_guard(field, acc):
     if field.type == FD.TYPE_BOOL:
         return acc
     if field.type == FD.TYPE_STRING:
-        return f"len({acc}) != 0"
+        return f"{acc}.byte_length() != 0"  # len(String) is deprecated
     if field.type in (FD.TYPE_DOUBLE, FD.TYPE_FLOAT):
         # proto3 detects the float/double default by bit pattern, not numeric
         # equality: -0.0 (bits != 0) is written, +0.0 (bits 0) omitted. A plain
