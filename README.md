@@ -138,8 +138,10 @@ Design notes and concept guides live in [`docs/`](./docs/):
    `.proto` files (proto3 scalars, `optional`, nested messages).
 5. ✅ **Repeated fields, maps, enums, oneofs** — packed/non-packed `repeated`,
    enums, `map<K, V>`, and `oneof` done (generator).
-6. **Generated bindings** — real schemas such as
-   [`livekit/protocol`](https://github.com/livekit/protocol).
+6. ✅ **Generated bindings** — the real
+   [`livekit/protocol`](https://github.com/livekit/protocol)
+   `livekit_models.proto` (51 messages) generates, compiles, and round-trips;
+   see [`examples/livekit`](./examples/livekit).
 
 ## Development
 

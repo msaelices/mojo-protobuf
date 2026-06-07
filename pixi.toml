@@ -23,6 +23,9 @@ test-codegen-unit = "python3 codegen/test_protoc_gen_mojo.py"
 test-codegen = { cmd = "mojo run -I src -I test/gen test/test_codegen.mojo", depends-on = ["codegen-gen"] }
 test-interop = { cmd = "python3 test/test_interop.py", depends-on = ["codegen-gen"] }
 test = { depends-on = ["test-wire", "test-fields", "test-message", "test-size", "test-codegen-unit", "test-codegen", "test-interop"] }
+livekit-gen = "protoc -I examples/livekit/proto --plugin=protoc-gen-mojo=codegen/protoc-gen-mojo --mojo_out=examples/livekit/gen livekit_models.proto livekit_metrics.proto"
+livekit-demo = { cmd = "mojo run -I src -I examples/livekit/gen examples/livekit/demo.mojo", depends-on = ["livekit-gen"] }
+livekit-test = { cmd = "mojo run -I src -I examples/livekit/gen examples/livekit/test_livekit.mojo", depends-on = ["livekit-gen"] }
 bench-wire = "mojo run -I src benchmarks/bench_wire.mojo"
 bench-message = "mojo run -I src benchmarks/bench_message.mojo"
 bench = { depends-on = ["bench-wire", "bench-message"] }
