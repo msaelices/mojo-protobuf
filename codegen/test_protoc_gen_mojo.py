@@ -8,7 +8,7 @@ silently-wrong code.
 
 from google.protobuf import descriptor_pb2
 
-from protoc_gen_mojo import gen_file, GenError
+from protoc_gen_mojo import gen_file, GenError, _register_types
 
 FD = descriptor_pb2.FieldDescriptorProto
 
@@ -272,13 +272,62 @@ def test_proto2_required_unsupported():
     _expect_error(fd, "required")
 
 
-def test_cross_file_message_ref_unsupported():
+def _registry(*fds):
+    registry, file_of, map_entries = {}, {}, {}
+    for fd in fds:
+        scope = "." + fd.package if fd.package else ""
+        _register_types(fd.message_type, scope, fd.package, fd.name, registry,
+                        file_of, map_entries)
+    return registry, file_of, map_entries
+
+
+def test_cross_file_message_ref_supported():
+    # A field whose type is defined in an imported .proto resolves and emits a
+    # `from <module> import <Struct>` line.
+    common = descriptor_pb2.FileDescriptorProto()
+    common.name, common.syntax, common.package = "common.proto", "proto3", "co"
+    geo = common.message_type.add()
+    geo.name = "Geo"
+    _add_field(geo, "lat", 1, FD.TYPE_DOUBLE)
+    place = descriptor_pb2.FileDescriptorProto()
+    place.name, place.syntax, place.package = "sub/place.proto", "proto3", "pl"
+    m = place.message_type.add()
+    m.name = "Place"
+    f = _add_field(m, "loc", 1, FD.TYPE_MESSAGE)
+    f.type_name = ".co.Geo"
+    rf = _add_field(m, "near", 2, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    rf.type_name = ".co.Geo"
+    out = gen_file(place, *_registry(common, place))
+    assert "from common import Geo" in out  # module path from the source file
+    assert "var loc: Geo" in out
+    assert "var near: List[Geo]" in out
+
+
+def test_cross_file_module_path_uses_slashes_as_dots():
+    # `foo/bar.proto` -> module `foo.bar`.
+    dep = descriptor_pb2.FileDescriptorProto()
+    dep.name, dep.syntax, dep.package = "foo/bar.proto", "proto3", "fb"
+    t = dep.message_type.add()
+    t.name = "T"
+    _add_field(t, "x", 1, FD.TYPE_INT32)
+    main = _file()
+    m = main.message_type.add()
+    m.name = "M"
+    f = _add_field(m, "t", 1, FD.TYPE_MESSAGE)
+    f.type_name = ".fb.T"
+    out = gen_file(main, *_registry(dep, main))
+    assert "from foo.bar import T" in out
+
+
+def test_undefined_type_ref_errors():
+    # A message field whose type is in no input file errors clearly (you must
+    # pass the defining .proto to protoc too).
     fd = _file()
     m = fd.message_type.add()
     m.name = "M"
     f = _add_field(m, "other", 1, FD.TYPE_MESSAGE)
-    f.type_name = ".other.Thing"  # not defined in this file
-    _expect_error(fd, "cross-file")
+    f.type_name = ".nope.Thing"
+    _expect_error(fd, "not defined in any input file")
 
 
 def test_proto2_unsupported():

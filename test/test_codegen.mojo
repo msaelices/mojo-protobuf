@@ -10,8 +10,10 @@ from std.testing import (
 
 from protobuf.message import decode, encode
 
+from common import Geo, Unit_FEET, Unit_METERS
 from enums import Color_BLUE, Color_GREEN, Color_RED, Thing, Thing_Kind_PRIMARY
 from example import AllTypes, Person, Point
+from place import Place
 from maps import Attr, Maps, Status_STATUS_ERR, Status_STATUS_OK
 from oneof import HasOpt, Inner, Kind_KIND_B, M
 from rep import Record, Tag
@@ -281,6 +283,29 @@ def test_codegen_optional_message() raises:
     assert_equal(len(encode(absent)), 0)  # absent emits nothing
     var ga = decode[HasOpt](Span(encode(absent)))
     assert_false(ga.maybe)
+
+
+def test_codegen_crossfile() raises:
+    # Cross-file references: `place.proto` imports `common.proto` and uses
+    # common.Geo as a singular field, a repeated field, and a map value, plus a
+    # cross-file enum (-> Int32). Geo is imported `from common import Geo`.
+    var p = Place()
+    p.name = String("park")
+    p.location = Geo(40.7, -74.0)
+    p.waypoints = [Geo(1.0, 2.0), Geo(3.0, 4.0)]
+    p.pins["entrance"] = Geo(5.5, 6.6)
+    p.unit = Unit_METERS
+    var data = encode(p)
+    assert_equal(len(data), p.encoded_size())
+    var got = decode[Place](Span(data))
+    assert_equal(got.name, String("park"))
+    assert_equal(got.location.lat, Float64(40.7))
+    assert_equal(got.location.lng, Float64(-74.0))
+    assert_equal(len(got.waypoints), 2)
+    assert_equal(got.waypoints[1].lng, Float64(4.0))
+    assert_equal(got.pins["entrance"].lat, Float64(5.5))
+    assert_equal(got.unit, Unit_METERS)
+    assert_true(Unit_FEET != Unit_METERS)
 
 
 def test_codegen_repeated_message_malformed_raises() raises:

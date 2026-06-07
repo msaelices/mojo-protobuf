@@ -1,0 +1,13 @@
+syntax = "proto3";
+package common;
+
+message Geo {
+  double lat = 1;
+  double lng = 2;
+}
+
+enum Unit {
+  UNIT_NONE = 0;
+  METERS = 1;
+  FEET = 2;
+}
