@@ -1,0 +1,5 @@
+gen/
+go/pb/
+go/go.sum
+rust/target/
+__pycache__/

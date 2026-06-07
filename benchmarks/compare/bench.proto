@@ -1,0 +1,7 @@
+syntax = "proto3";
+package cmp;
+
+// Packed repeated int64: the bulk-numeric decode hot path.
+message Packed {
+  repeated int64 values = 1;
+}
