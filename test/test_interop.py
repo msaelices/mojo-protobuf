@@ -260,6 +260,17 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+MICRO_ENC = """\
+from protobuf.message import encode
+from example import Person
+
+
+def main():
+    var p = Person()
+    p.id = 42  # everything else left default -> omitted (canonical)
+    _print_bytes(encode(p))
+"""
+
 PLACE_ENC = """\
 from protobuf.message import encode
 from common import Geo
@@ -481,6 +492,14 @@ def test_oneof_forward_reference_encodes_mojo_decodes():
     m = pb.M(id=5, count=0, ok=True)
     assert m.WhichOneof("payload") == "count"
     _mojo_decodes(ONEOF_DEC, m.SerializeToString())
+
+
+def test_default_omission_byte_identical_to_reference():
+    # With default-omission, Mojo's encoding is byte-identical to the reference's
+    # canonical output (not just parseable): a mostly-default Person is `08 2a`.
+    pb = _pb("example_pb2")
+    mojo_bytes = _mojo_encode(MICRO_ENC)
+    assert mojo_bytes == pb.Person(id=42).SerializeToString(), mojo_bytes
 
 
 def test_place_reverse_mojo_encodes_reference_decodes():

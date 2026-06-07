@@ -308,6 +308,33 @@ def test_codegen_crossfile() raises:
     assert_true(Unit_FEET != Unit_METERS)
 
 
+def test_codegen_default_omission() raises:
+    # proto3 omits plain singular fields that hold their default value. A Person
+    # with only `id` set encodes to just that one field (tag 1 + varint 42); the
+    # default string/bool/bytes and the all-default nested Point are omitted.
+    var p = Person()
+    p.id = 42
+    var data = encode(p)
+    assert_equal(len(data), 2)  # 0x08 0x2a only
+    assert_equal(data[0], Byte(8))
+    assert_equal(data[1], Byte(42))
+    assert_equal(len(data), p.encoded_size())
+    var got = decode[Person](Span(data))
+    assert_equal(got.id, 42)
+    assert_equal(got.name, String(""))  # omitted -> default on decode
+    assert_false(got.active)
+    assert_equal(len(got.avatar), 0)
+    assert_equal(got.location.x, 0)  # all-default nested message omitted
+
+    # A default scalar inside an otherwise-set message is still omitted: Point
+    # with x=0, y=5 emits only y.
+    var pt = Point(0, 5)
+    var pd = encode(pt)
+    assert_equal(len(pd), pt.encoded_size())
+    assert_equal(pd[0], Byte(16))  # field 2 (y), tag 0x10 — x (field 1) omitted
+    assert_equal(decode[Point](Span(pd)).y, 5)
+
+
 def test_codegen_repeated_message_malformed_raises() raises:
     # A repeated-message element whose nested sub-message is corrupt must raise
     # out of the per-element decode[Tag], not silently truncate. Here field 3
