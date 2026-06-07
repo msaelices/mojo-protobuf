@@ -5,7 +5,9 @@ mojo-protobuf generating and using bindings for a real production schema:
 the LiveKit server and SDKs.
 
 The `.proto` files under `proto/` are vendored **unmodified** from
-`livekit/protocol` (Apache 2.0 — see the license header in each file).
+`livekit/protocol` (Apache 2.0 — see the license header in `livekit_models.proto`
+and the upstream
+[`LICENSE`](https://github.com/livekit/protocol/blob/main/LICENSE)).
 `livekit_models.proto` alone is 51 messages and exercises essentially every
 feature of the generator at once:
 
