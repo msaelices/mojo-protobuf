@@ -335,6 +335,25 @@ def test_codegen_default_omission() raises:
     assert_equal(decode[Point](Span(pd)).y, 5)
 
 
+def test_codegen_negative_zero_preserved() raises:
+    # proto3 detects the float/double default by bit pattern, not numeric
+    # equality: -0.0 is non-default and must be written (and round-trip to -0.0,
+    # not +0.0), while +0.0 is the default and is omitted.
+    var a = AllTypes()
+    a.d = Float64(-0.0)
+    a.f = Float32(-0.0)
+    var data = encode(a)
+    assert_equal(len(data), a.encoded_size())
+    assert_true(len(data) > 0)  # -0.0 is written, not omitted
+    var got = decode[AllTypes](Span(data))
+    assert_equal(got.d.to_bits(), Float64(-0.0).to_bits())  # sign preserved
+    assert_equal(got.f.to_bits(), Float32(-0.0).to_bits())
+
+    var z = AllTypes()
+    z.d = Float64(0.0)  # +0.0 is the default
+    assert_equal(len(encode(z)), 0)  # omitted
+
+
 def test_codegen_repeated_message_malformed_raises() raises:
     # A repeated-message element whose nested sub-message is corrupt must raise
     # out of the per-element decode[Tag], not silently truncate. Here field 3
