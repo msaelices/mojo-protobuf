@@ -1,0 +1,13 @@
+syntax = "proto3";
+package rep;
+
+message Tag {
+  string key = 1;
+  string value = 2;
+}
+
+message Record {
+  repeated string names = 1;   // non-packed repeated string
+  repeated bytes blobs = 2;    // non-packed repeated bytes
+  repeated Tag tags = 3;       // non-packed repeated message
+}
