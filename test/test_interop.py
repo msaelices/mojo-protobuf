@@ -189,6 +189,45 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+MAPS_ENC = """\
+from protobuf.message import encode
+from maps import Maps, Attr, Status_STATUS_OK, Status_STATUS_ERR
+
+
+def main():
+    var m = Maps()
+    m.counts["a"] = Int32(0)
+    m.counts["b"] = Int32(5)
+    m.labels["x"] = String("hi")
+    m.attrs[7] = Attr("kg", Int64(10))
+    m.blobs["bin"] = [Byte(1), Byte(255)]
+    m.states["svc"] = Status_STATUS_OK
+    m.states["db"] = Status_STATUS_ERR
+    m.id = 99
+    _print_bytes(encode(m))
+"""
+
+MAPS_DEC = """\
+from std.testing import assert_equal
+from protobuf.message import decode
+from maps import Maps, Status_STATUS_OK, Status_STATUS_ERR
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[Maps](Span(data))
+    assert_equal(got.counts["a"], Int32(0))
+    assert_equal(got.counts["b"], Int32(5))
+    assert_equal(got.labels["x"], String("hi"))
+    assert_equal(got.attrs[7].unit, String("kg"))
+    assert_equal(got.attrs[7].scale, Int64(10))
+    assert_equal(got.blobs["bin"][1], Byte(255))
+    assert_equal(got.states["svc"], Status_STATUS_OK)
+    assert_equal(got.states["db"], Status_STATUS_ERR)
+    assert_equal(got.id, 99)
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -211,7 +250,8 @@ def _gen_reference():
         _TMP = tempfile.mkdtemp()
         subprocess.run(
             ["protoc", "-I", "test/proto", "--python_out", _TMP,
-             "example.proto", "telem.proto", "enums.proto", "rep.proto"],
+             "example.proto", "telem.proto", "enums.proto", "rep.proto",
+             "maps.proto"],
             cwd=ROOT, check=True,
         )
         sys.path.insert(0, _TMP)
@@ -337,6 +377,27 @@ def test_rep_forward_reference_encodes_mojo_decodes():
         tags=[pb.Tag(key="env", value="prod"), pb.Tag(key="v", value="2")],
     )
     _mojo_decodes(REP_DEC, r.SerializeToString())
+
+
+def test_maps_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("maps_pb2")
+    m = pb.Maps.FromString(_mojo_encode(MAPS_ENC))
+    assert dict(m.counts) == {"a": 0, "b": 5}, dict(m.counts)
+    assert dict(m.labels) == {"x": "hi"}, dict(m.labels)
+    assert m.attrs[7].unit == "kg" and m.attrs[7].scale == 10
+    assert m.blobs["bin"] == b"\x01\xff", m.blobs["bin"]
+    assert m.states["svc"] == pb.STATUS_OK and m.states["db"] == pb.STATUS_ERR
+    assert m.id == 99
+
+
+def test_maps_forward_reference_encodes_mojo_decodes():
+    pb = _pb("maps_pb2")
+    m = pb.Maps(
+        counts={"a": 0, "b": 5}, labels={"x": "hi"},
+        attrs={7: pb.Attr(unit="kg", scale=10)}, blobs={"bin": b"\x01\xff"},
+        states={"svc": pb.STATUS_OK, "db": pb.STATUS_ERR}, id=99,
+    )
+    _mojo_decodes(MAPS_DEC, m.SerializeToString())
 
 
 def main():

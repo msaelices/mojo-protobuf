@@ -102,20 +102,71 @@ def test_repeated_nonpacked():
     assert "for ref _e in self.names:" in out  # encode loops per element
 
 
-def test_map_unsupported():
-    # A map<K,V> lowers to a repeated nested message with options.map_entry; it
-    # must error with a map-specific message, not the generic repeated one.
+def _add_map_field(m, name, number, key_type, value_type, entry_name,
+                   value_type_name=""):
+    # Mirror protoc's lowering: a map<K,V> field is a repeated nested message
+    # `<Name>Entry { K key = 1; V value = 2; }` with options.map_entry set.
+    entry = m.nested_type.add()
+    entry.name = entry_name
+    entry.options.map_entry = True
+    _add_field(entry, "key", 1, key_type)
+    vf = _add_field(entry, "value", 2, value_type)
+    if value_type_name:
+        vf.type_name = value_type_name
+    f = _add_field(m, name, number, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    f.type_name = f".t.M.{entry_name}"
+    return f
+
+
+def test_map_supported():
+    # map<K,V> -> Dict[K,V]; scalar and message values both work, each entry a
+    # length-delimited key=1/value=2 submessage.
+    fd = _file()
+    attr = fd.message_type.add()
+    attr.name = "Attr"
+    _add_field(attr, "unit", 1, FD.TYPE_STRING)
+    m = fd.message_type.add()
+    m.name = "M"
+    _add_map_field(m, "counts", 1, FD.TYPE_STRING, FD.TYPE_INT32, "CountsEntry")
+    _add_map_field(m, "attrs", 2, FD.TYPE_INT32, FD.TYPE_MESSAGE, "AttrsEntry",
+                   value_type_name=".t.Attr")
+    out = gen_file(fd)
+    assert "var counts: Dict[String, Int32]" in out
+    assert "var attrs: Dict[Int32, Attr]" in out
+    # entries are length-delimited submessages, decoded by an inner tag loop
+    assert "for _e in self.counts.items():" in out
+    assert "var _efn_counts, _ewt_counts = decode_tag(" in out
+    # string key transfers (`^`); trivial Int32 value does not
+    assert "self.counts[_k_counts^] = _v_counts" in out
+    assert "_v_attrs = decode[Attr](read_bytes(" in out  # message value
+    # the synthetic *Entry messages are not emitted as structs
+    assert "struct CountsEntry" not in out
+    assert "struct AttrsEntry" not in out
+
+
+def test_map_invalid_key_type_unsupported():
+    # proto forbids float/double/bytes/message/enum map keys; the generator must
+    # reject them rather than emit an invalid Dict key type.
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    _add_map_field(m, "bad", 1, FD.TYPE_DOUBLE, FD.TYPE_INT32, "BadEntry")
+    _expect_error(fd, "map key type")
+
+
+def test_map_malformed_entry_unsupported():
+    # A map_entry descriptor missing key=1/value=2 must raise GenError, not an
+    # uncaught StopIteration (defensive: real protoc always emits both).
     fd = _file()
     m = fd.message_type.add()
     m.name = "M"
     entry = m.nested_type.add()
-    entry.name = "CountsEntry"
+    entry.name = "BadEntry"
     entry.options.map_entry = True
-    _add_field(entry, "key", 1, FD.TYPE_STRING)
-    _add_field(entry, "value", 2, FD.TYPE_INT32)
-    f = _add_field(m, "counts", 1, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
-    f.type_name = ".t.M.CountsEntry"
-    _expect_error(fd, "map")
+    _add_field(entry, "key", 1, FD.TYPE_STRING)  # value=2 deliberately omitted
+    f = _add_field(m, "bad", 1, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    f.type_name = ".t.M.BadEntry"
+    _expect_error(fd, "malformed map entry")
 
 
 def test_enum_supported():

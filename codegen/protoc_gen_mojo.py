@@ -13,10 +13,10 @@ Run via:
 Supported: proto3 singular scalars (double, float, int32/64, uint32/64,
 sint32/64, bool, string, bytes), `enum` (-> `Int32` + named constants),
 `optional` scalars (proto3 explicit presence -> `Optional[T]`), singular nested
-messages, packed `repeated` numeric scalars/enums, and non-packed `repeated`
-string/bytes/message (-> `List[T]`). Unsupported features (map, oneof, group,
-fixed/sfixed, proto2) raise a clear error so the generated code is never
-silently wrong.
+messages, packed `repeated` numeric scalars/enums, non-packed `repeated`
+string/bytes/message (-> `List[T]`), and `map<K, V>` (-> `Dict[K, V]`).
+Unsupported features (oneof, group, fixed/sfixed, proto2) raise a clear error
+so the generated code is never silently wrong.
 """
 
 import sys
@@ -50,7 +50,9 @@ def _ident(name: str) -> str:
 #   default: default-value expression for the no-arg constructor
 #   write:   (num, acc) -> the `write_*(...)` statement
 #   size:    (num, acc) -> the per-field size expression
-#   read:    () -> an expression yielding the decoded value
+#   read:    (src='data', cur='pos') -> expression decoding one value from span
+#            `src` at cursor `cur` (defaults reproduce the singular-field call;
+#            map-entry decode passes the entry span + its own cursor)
 #   imports: runtime symbols this arm needs (module -> names)
 class _Scalar:
     def __init__(self, mojo, default, write, size, read, w, s, r):
@@ -67,61 +69,61 @@ SCALAR = {
         "Float64", "Float64(0)",
         lambda n, a: f"write_double({n}, {a}, output)",
         lambda n, a: f"fixed64_field_size({n})",
-        lambda: "read_double(data, pos)",
+        lambda s="data", p="pos": f"read_double({s}, {p})",
         "write_double", "fixed64_field_size", "read_double"),
     FD.TYPE_FLOAT: _Scalar(
         "Float32", "Float32(0)",
         lambda n, a: f"write_float({n}, {a}, output)",
         lambda n, a: f"fixed32_field_size({n})",
-        lambda: "read_float(data, pos)",
+        lambda s="data", p="pos": f"read_float({s}, {p})",
         "write_float", "fixed32_field_size", "read_float"),
     FD.TYPE_INT64: _Scalar(
         "Int64", "Int64(0)",
         lambda n, a: f"write_int64({n}, {a}, output)",
         lambda n, a: f"int64_field_size({n}, {a})",
-        lambda: "read_int64(data, pos)",
+        lambda s="data", p="pos": f"read_int64({s}, {p})",
         "write_int64", "int64_field_size", "read_int64"),
     FD.TYPE_UINT64: _Scalar(
         "UInt64", "UInt64(0)",
         lambda n, a: f"write_uint64({n}, {a}, output)",
         lambda n, a: f"uint64_field_size({n}, {a})",
-        lambda: "read_uint64(data, pos)",
+        lambda s="data", p="pos": f"read_uint64({s}, {p})",
         "write_uint64", "uint64_field_size", "read_uint64"),
     FD.TYPE_INT32: _Scalar(
         "Int32", "Int32(0)",
         lambda n, a: f"write_int64({n}, Int64({a}), output)",
         lambda n, a: f"int64_field_size({n}, Int64({a}))",
-        lambda: "Int32(read_int64(data, pos))",
+        lambda s="data", p="pos": f"Int32(read_int64({s}, {p}))",
         "write_int64", "int64_field_size", "read_int64"),
     FD.TYPE_UINT32: _Scalar(
         "UInt32", "UInt32(0)",
         lambda n, a: f"write_uint64({n}, UInt64({a}), output)",
         lambda n, a: f"uint64_field_size({n}, UInt64({a}))",
-        lambda: "UInt32(read_uint64(data, pos))",
+        lambda s="data", p="pos": f"UInt32(read_uint64({s}, {p}))",
         "write_uint64", "uint64_field_size", "read_uint64"),
     FD.TYPE_SINT32: _Scalar(
         "Int32", "Int32(0)",
         lambda n, a: f"write_sint64({n}, Int64({a}), output)",
         lambda n, a: f"sint64_field_size({n}, Int64({a}))",
-        lambda: "Int32(read_sint64(data, pos))",
+        lambda s="data", p="pos": f"Int32(read_sint64({s}, {p}))",
         "write_sint64", "sint64_field_size", "read_sint64"),
     FD.TYPE_SINT64: _Scalar(
         "Int64", "Int64(0)",
         lambda n, a: f"write_sint64({n}, {a}, output)",
         lambda n, a: f"sint64_field_size({n}, {a})",
-        lambda: "read_sint64(data, pos)",
+        lambda s="data", p="pos": f"read_sint64({s}, {p})",
         "write_sint64", "sint64_field_size", "read_sint64"),
     FD.TYPE_BOOL: _Scalar(
         "Bool", "False",
         lambda n, a: f"write_bool({n}, {a}, output)",
         lambda n, a: f"bool_field_size({n})",
-        lambda: "read_bool(data, pos)",
+        lambda s="data", p="pos": f"read_bool({s}, {p})",
         "write_bool", "bool_field_size", "read_bool"),
     FD.TYPE_STRING: _Scalar(
         "String", 'String("")',
         lambda n, a: f"write_string({n}, {a}, output)",
         lambda n, a: f"string_field_size({n}, {a})",
-        lambda: "read_string(data, pos)",
+        lambda s="data", p="pos": f"read_string({s}, {p})",
         "write_string", "string_field_size", "read_string"),
     # proto3 enums are wire-identical to int32 (a two's-complement varint), and
     # are open (unknown values are preserved), so they map to a bare Int32; the
@@ -130,7 +132,7 @@ SCALAR = {
         "Int32", "Int32(0)",
         lambda n, a: f"write_int64({n}, Int64({a}), output)",
         lambda n, a: f"int64_field_size({n}, Int64({a}))",
-        lambda: "Int32(read_int64(data, pos))",
+        lambda s="data", p="pos": f"Int32(read_int64({s}, {p}))",
         "write_int64", "int64_field_size", "read_int64"),
 }
 
@@ -249,13 +251,14 @@ def _collect_messages(msgs, scope, package, type_map, out, map_entries):
     """Walk messages + nested types, recording full-name -> Mojo struct name.
 
     Synthetic map-entry messages (a `map<K, V>` field lowers to a repeated
-    nested message with `options.map_entry`) are recorded in `map_entries` and
+    nested message with `options.map_entry`) are recorded in `map_entries`
+    (full name -> the entry descriptor, whose fields 1/2 are key/value) and
     not emitted as structs.
     """
     for m in msgs:
         full = f"{scope}.{m.name}"
         if m.options.map_entry:
-            map_entries.add(full)
+            map_entries[full] = m
             continue
         mojo = _struct_name(full, "." + package if package else ".")
         if any(existing == mojo for existing, _ in out):
@@ -297,12 +300,26 @@ def _field_mojo_type(field, type_map):
 _NONPACKED_REPEATED = (FD.TYPE_STRING, FD.TYPE_BYTES, FD.TYPE_MESSAGE)
 
 
+def _is_map_field(field, map_entries):
+    return (
+        field.label == FD.LABEL_REPEATED
+        and field.type == FD.TYPE_MESSAGE
+        and field.type_name in map_entries
+    )
+
+
+# proto restricts map keys to integral / bool / string (no float, bytes,
+# enum, or message); these are exactly the scalar arms valid as a Dict key.
+_MAP_KEY_TYPES = (
+    FD.TYPE_INT32, FD.TYPE_INT64, FD.TYPE_UINT32, FD.TYPE_UINT64,
+    FD.TYPE_SINT32, FD.TYPE_SINT64, FD.TYPE_BOOL, FD.TYPE_STRING,
+)
+
+
 def _check_field(field, map_entries):
+    if _is_map_field(field, map_entries):
+        return  # validated in the map handler (key/value types)
     if field.label == FD.LABEL_REPEATED:
-        if field.type == FD.TYPE_MESSAGE and field.type_name in map_entries:
-            raise GenError(
-                f"field '{field.name}': map<K, V> is not supported in v1"
-            )
         if field.type not in PACKED and field.type not in _NONPACKED_REPEATED:
             # e.g. repeated fixed/sfixed/group
             raise GenError(
@@ -314,6 +331,143 @@ def _check_field(field, map_entries):
     # proto3_optional flag.
     if field.HasField("oneof_index") and not field.proto3_optional:
         raise GenError(f"field '{field.name}': oneof is not supported in v1")
+
+
+def _gen_map_field(f, name, num, map_entries, type_map, imports,
+                   decls, defaults, encode_items, size_items, decode):
+    """Emit a proto3 `map<K, V>` field as a Mojo `Dict[K, V]`.
+
+    A map lowers to `repeated Entry { K key = 1; V value = 2; }`; each entry is
+    a length-delimited sub-message that always carries both key and value (even
+    at default value, unlike normal proto3 fields). Keys are integral/bool/
+    string; values reuse every singular arm (scalar/string/bytes/message/enum).
+    Last occurrence of a key wins, matching the proto3 map merge rule.
+    """
+    m = name
+    entry = map_entries[f.type_name]
+    kf = next((x for x in entry.field if x.number == 1), None)
+    vf = next((x for x in entry.field if x.number == 2), None)
+    if kf is None or vf is None:
+        raise GenError(
+            f"field '{f.name}': malformed map entry '{f.type_name}' "
+            "(expected key=1 and value=2)"
+        )
+    if kf.type not in _MAP_KEY_TYPES:
+        raise GenError(
+            f"field '{f.name}': map key type {kf.type} is not supported"
+        )
+    kspec = SCALAR[kf.type]
+    _merge_imports(imports, kspec.imports)
+    _merge_imports(imports, {
+        "wire": {"encode_tag", "encode_varint", "WIRE_LEN", "decode_tag"},
+        "size": {"tag_size", "varint_size"},
+        "fields": {"read_bytes"},
+    })
+    imports.setdefault("message", set()).add("decode")
+
+    ktype = kspec.mojo
+    ksize = kspec.size(1, "_e.key")
+    kwrite = kspec.write(1, "_e.key")
+    # `^` only for non-trivial types; transferring a trivial register type
+    # (Int*/UInt*/Bool/enum) is a no-op the compiler warns about.
+    kmove = "^" if kf.type == FD.TYPE_STRING else ""
+    vmove = "^" if vf.type in (
+        FD.TYPE_STRING, FD.TYPE_BYTES, FD.TYPE_MESSAGE) else ""
+
+    # Value codec: scalar (incl. string / enum), bytes, or nested message.
+    if vf.type == FD.TYPE_BYTES:
+        vtype, vdefault = "List[Byte]", "List[Byte]()"
+        _merge_imports(imports, {
+            "fields": {"write_bytes"}, "size": {"bytes_field_size"}})
+        vsize = "bytes_field_size(2, Span(_e.value))"
+        vwrite = ["            write_bytes(2, Span(_e.value), output)"]
+        vread = [
+            f"                    var _vb_{m} = List[Byte]()",
+            f"                    _vb_{m}.extend(read_bytes(_entry_{m}, _ep_{m}))",
+            f"                    _v_{m} = _vb_{m}^",
+        ]
+        is_msg = False
+    elif vf.type == FD.TYPE_MESSAGE:
+        vtype = _field_mojo_type(vf, type_map)
+        vdefault = f"{vtype}()"
+        vsize, vwrite = "", []  # handled inline (encoded_size computed once)
+        vread = [
+            f"                    _v_{m} = decode[{vtype}]("
+            f"read_bytes(_entry_{m}, _ep_{m}))",
+        ]
+        is_msg = True
+    else:
+        vspec = SCALAR.get(vf.type)
+        if vspec is None:
+            _field_mojo_type(vf, type_map)  # raises a precise GenError
+            raise GenError(f"field '{f.name}': unsupported map value type")
+        _merge_imports(imports, vspec.imports)
+        vtype, vdefault = vspec.mojo, vspec.default
+        vsize = vspec.size(2, "_e.value")
+        vwrite = [f"            {vspec.write(2, '_e.value')}"]
+        vread = [f"                    _v_{m} = "
+                 f"{vspec.read('_entry_' + m, '_ep_' + m)}"]
+        is_msg = False
+
+    decls.append(f"    var {m}: Dict[{ktype}, {vtype}]")
+    defaults.append(f"        self.{m} = Dict[{ktype}, {vtype}]()")
+
+    # Encode + size: one length-delimited entry per pair; entry body length is
+    # key-field-bytes + value-field-bytes (each includes its own tag).
+    if is_msg:
+        enc = [
+            f"        for _e in self.{m}.items():",
+            "            var _vsz = _e.value.encoded_size()",
+            "            var _vf = tag_size(2) + varint_size("
+            "UInt64(_vsz)) + _vsz",
+            f"            encode_tag({num}, WIRE_LEN, output)",
+            f"            encode_varint(UInt64({ksize} + _vf), output)",
+            f"            {kwrite}",
+            "            encode_tag(2, WIRE_LEN, output)",
+            "            encode_varint(UInt64(_vsz), output)",
+            "            _e.value.encode_to(output)",
+        ]
+        sz = [
+            f"        for _e in self.{m}.items():",
+            "            var _vsz = _e.value.encoded_size()",
+            f"            var _entlen = {ksize} + tag_size(2) + "
+            "varint_size(UInt64(_vsz)) + _vsz",
+            f"            total += tag_size({num}) + varint_size("
+            "UInt64(_entlen)) + _entlen",
+        ]
+    else:
+        enc = [
+            f"        for _e in self.{m}.items():",
+            f"            encode_tag({num}, WIRE_LEN, output)",
+            f"            encode_varint(UInt64({ksize} + {vsize}), output)",
+            f"            {kwrite}",
+        ] + vwrite
+        sz = [
+            f"        for _e in self.{m}.items():",
+            f"            var _entlen = {ksize} + {vsize}",
+            f"            total += tag_size({num}) + varint_size("
+            "UInt64(_entlen)) + _entlen",
+        ]
+    encode_items.append((num, enc))
+    size_items.append((num, sz))
+
+    decode += [
+        f"        if field_number == {num}:",
+        f"            var _entry_{m} = read_bytes(data, pos)",
+        f"            var _ep_{m} = 0",
+        f"            var _k_{m} = {kspec.default}",
+        f"            var _v_{m} = {vdefault}",
+        f"            while _ep_{m} < len(_entry_{m}):",
+        f"                var _efn_{m}, _ewt_{m} = decode_tag("
+        f"_entry_{m}, _ep_{m})",
+        f"                if _efn_{m} == 1:",
+        f"                    _k_{m} = {kspec.read('_entry_' + m, '_ep_' + m)}",
+        f"                elif _efn_{m} == 2:",
+    ] + vread + [
+        "                else:",
+        f"                    skip_field(_entry_{m}, _ep_{m}, _ewt_{m})",
+        f"            self.{m}[_k_{m}{kmove}] = _v_{m}{vmove}",
+    ]
 
 
 def gen_message(mojo_name, desc, type_map, imports, map_entries):
@@ -331,6 +485,11 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
         name = _ident(f.name)
         num = f.number
         optional = bool(f.proto3_optional)
+
+        if _is_map_field(f, map_entries):
+            _gen_map_field(f, name, num, map_entries, type_map, imports,
+                           decls, defaults, encode_items, size_items, decode)
+            continue
 
         if f.label == FD.LABEL_REPEATED and f.type in PACKED:
             pk = PACKED[f.type]  # _check_field already rejected unsupported
@@ -682,7 +841,7 @@ def gen_file(fd):
     package = fd.package
     type_map = {}
     ordered = []
-    map_entries = set()
+    map_entries = {}
     scope = "." + package if package else ""
     _collect_messages(
         fd.message_type, scope, package, type_map, ordered, map_entries
