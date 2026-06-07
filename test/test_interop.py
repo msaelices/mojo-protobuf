@@ -124,6 +124,39 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+ENUMS_ENC = """\
+from protobuf.message import encode
+from enums import Thing, Color_RED, Color_GREEN, Color_BLUE, Thing_Kind_PRIMARY
+
+
+def main():
+    var t = Thing()
+    t.color = Color_GREEN
+    t.palette = [Color_RED, Color_BLUE]
+    t.accent = Optional(Color_BLUE)
+    t.kind = Thing_Kind_PRIMARY
+    _print_bytes(encode(t))
+"""
+
+ENUMS_DEC = """\
+from std.testing import assert_equal, assert_true
+from protobuf.message import decode
+from enums import Thing, Color_GREEN, Color_BLUE, Color_RED, Thing_Kind_PRIMARY
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[Thing](Span(data))
+    assert_equal(got.color, Color_GREEN)
+    assert_equal(len(got.palette), 2)
+    assert_equal(got.palette[0], Color_RED)
+    assert_equal(got.palette[1], Color_BLUE)
+    assert_true(got.accent)
+    assert_equal(got.accent.value(), Color_BLUE)
+    assert_equal(got.kind, Thing_Kind_PRIMARY)
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -146,7 +179,7 @@ def _gen_reference():
         _TMP = tempfile.mkdtemp()
         subprocess.run(
             ["protoc", "-I", "test/proto", "--python_out", _TMP,
-             "example.proto", "telem.proto"],
+             "example.proto", "telem.proto", "enums.proto"],
             cwd=ROOT, check=True,
         )
         sys.path.insert(0, _TMP)
@@ -237,6 +270,24 @@ def test_packedall_forward_reference_encodes_mojo_decodes():
         u64=[9876543210],
     )
     _mojo_decodes(PACKEDALL_DEC, p.SerializeToString())
+
+
+def test_enums_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("enums_pb2")
+    t = pb.Thing.FromString(_mojo_encode(ENUMS_ENC))
+    assert t.color == pb.GREEN, t.color
+    assert list(t.palette) == [pb.RED, pb.BLUE], list(t.palette)
+    assert t.HasField("accent") and t.accent == pb.BLUE
+    assert t.kind == pb.Thing.PRIMARY, t.kind
+
+
+def test_enums_forward_reference_encodes_mojo_decodes():
+    pb = _pb("enums_pb2")
+    t = pb.Thing(
+        color=pb.GREEN, palette=[pb.RED, pb.BLUE], accent=pb.BLUE,
+        kind=pb.Thing.PRIMARY,
+    )
+    _mojo_decodes(ENUMS_DEC, t.SerializeToString())
 
 
 def main():

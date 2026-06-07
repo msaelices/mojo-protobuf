@@ -1,0 +1,19 @@
+syntax = "proto3";
+package en;
+
+enum Color {
+  RED = 0;
+  GREEN = 1;
+  BLUE = 2;
+}
+
+message Thing {
+  enum Kind {
+    UNKNOWN = 0;
+    PRIMARY = 1;
+  }
+  Color color = 1;
+  repeated Color palette = 2;   // packed repeated enum
+  optional Color accent = 3;
+  Kind kind = 4;                // nested enum
+}

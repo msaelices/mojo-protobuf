@@ -106,13 +106,55 @@ def test_map_unsupported():
     _expect_error(fd, "map")
 
 
-def test_enum_unsupported():
+def test_enum_supported():
+    # proto3 enum -> Int32 field + comptime named-value constants.
     fd = _file()
+    e = fd.enum_type.add()
+    e.name = "Color"
+    e.value.add(name="RED", number=0)
+    e.value.add(name="GREEN", number=1)
     m = fd.message_type.add()
     m.name = "M"
-    f = _add_field(m, "e", 1, FD.TYPE_ENUM)
-    f.type_name = ".t.E"
-    _expect_error(fd, "enum")
+    f = _add_field(m, "c", 1, FD.TYPE_ENUM)
+    f.type_name = ".t.Color"
+    g = _add_field(m, "cs", 2, FD.TYPE_ENUM, label=FD.LABEL_REPEATED)
+    g.type_name = ".t.Color"
+    out = gen_file(fd)
+    assert "comptime Color_RED = Int32(0)" in out
+    assert "comptime Color_GREEN = Int32(1)" in out
+    assert "var c: Int32" in out  # singular enum -> Int32
+    assert "var cs: List[Int32]" in out  # repeated enum -> packed List[Int32]
+    assert "read_packed_signed[DType.int32]" in out
+
+
+def test_enum_constant_collision_two_enums():
+    # Enum `A_B` value `C` and nested enum `A.B` value `C` both flatten to the
+    # constant `A_B_C`; must error, not emit a duplicate `comptime`.
+    fd = _file()
+    e1 = fd.enum_type.add()
+    e1.name = "A_B"
+    e1.value.add(name="C", number=0)
+    m = fd.message_type.add()
+    m.name = "A"
+    en = m.enum_type.add()
+    en.name = "B"
+    en.value.add(name="C", number=0)
+    _expect_error(fd, "two enums")
+
+
+def test_enum_constant_collides_with_struct():
+    # Constant `Foo_Bar_Baz` (enum `Foo_Bar` value `Baz`) collides with the
+    # struct `Foo_Bar_Baz` (message Foo.Bar.Baz); must error.
+    fd = _file()
+    foo = fd.message_type.add()
+    foo.name = "Foo"
+    bar = foo.nested_type.add()
+    bar.name = "Bar"
+    bar.nested_type.add().name = "Baz"
+    e = fd.enum_type.add()
+    e.name = "Foo_Bar"
+    e.value.add(name="Baz", number=0)
+    _expect_error(fd, "struct name")
 
 
 def test_oneof_unsupported():

@@ -57,9 +57,19 @@ Mojo, decode in Python and vice versa).
 | message `M` | `M` | length-delimited nested message |
 | `optional <scalar>` | `Optional[T]` | proto3 explicit presence |
 | `repeated <scalar>` | `List[T]` | proto3 **packed** (see below) |
+| `enum E` | `Int32` | + `comptime E_VALUE = Int32(n)` constants |
 
 Nested message *definitions* (a `message` declared inside another) are flattened
 to top-level structs named `Outer_Inner`.
+
+### Enums
+
+A proto3 `enum` is wire-identical to `int32` (a two's-complement varint) and is
+*open* — unknown values are preserved — so an enum field becomes a bare `Int32`
+and the named values are emitted as module-level constants,
+`comptime <Enum>_<VALUE> = Int32(n)` (nested enums flatten to `Outer_Inner`).
+Compare and assign with the constants: `thing.color = Color_GREEN`. `repeated`
+enums pack like `repeated int32`.
 
 ### Packed repeated scalars
 
@@ -77,7 +87,6 @@ These raise a clear generator error rather than emitting wrong code:
 - `repeated string` / `repeated bytes` / `repeated <message>` (the non-packed
   repeated kinds) and `map<K, V>`
 - `oneof`
-- `enum`
 - `fixed32/64`, `sfixed32/64`
 - `group` (a deprecated proto2 feature) and proto2 syntax in general
 - cross-file message references (a field whose type is defined in an imported
