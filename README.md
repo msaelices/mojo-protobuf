@@ -106,7 +106,10 @@ Mojo lets a native codec be fast in ways an FFI binding can't:
   `encoded_size()`; reuse a buffer with `encode_to` for allocation-free
   encoding, and `bytes` fields decode as a zero-copy view.
 
-See the benchmarks in [`benchmarks/`](./benchmarks/) (`pixi run bench`).
+See the benchmarks in [`benchmarks/`](./benchmarks/) (`pixi run bench`), and a
+[cross-implementation comparison](./benchmarks/compare/) against the C-backed
+Python `upb`, Go, and Rust `prost`: mojo-protobuf decodes a packed numeric array
+fastest (SIMD), and trails the mature libraries on string-heavy records.
 
 ## Documentation
 
