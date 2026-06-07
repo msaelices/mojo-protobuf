@@ -98,9 +98,9 @@ Mojo lets a native codec be fast in ways an FFI binding can't:
   reflection or dispatch, and the field codecs inline into the message methods.
 
 - **SIMD on the bulk-numeric hot path.** Packed `repeated` numeric fields decode
-  through a SIMD fast path that extracts a chunk of small varints at once: **~10x**
-  faster than the scalar loop on small-value arrays (counts, ids, enums, deltas),
-  no regression on large ones, and byte-identical to the reference protobuf.
+  through a SIMD fast path that extracts a chunk of small varints at once:
+  **~10x** faster than the scalar loop on small-value arrays (counts, ids,
+  enums, deltas), no regression on large ones, byte-identical to the reference.
 
 - **Allocation-aware.** `encode` reserves the buffer exactly from
   `encoded_size()`; reuse a buffer with `encode_to` for allocation-free
