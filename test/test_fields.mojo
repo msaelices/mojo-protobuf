@@ -295,5 +295,22 @@ def test_read_string_ascii_fast_path() raises:
     assert_equal(read_string(Span(buf2), pos2), u)
 
 
+def test_read_string_long_invalid_utf8_raises() raises:
+    # A lone 0x80 (invalid UTF-8) past the SIMD-width boundary must be detected
+    # by the SIMD scan, not skipped — so read_string still raises. Guards the
+    # _all_ascii accumulator against missing a high bit in the chunked region.
+    var raw = List[Byte]()
+    for _ in range(40):  # > SIMD width, so the 0x80 lands in the SIMD loop
+        raw.append(Byte(0x61))  # 'a'
+    raw.append(Byte(0x80))  # lone continuation byte: invalid UTF-8
+    for _ in range(10):
+        raw.append(Byte(0x61))
+    var buf = List[Byte]()
+    encode_bytes(Span(raw), buf)
+    var pos = 0
+    with assert_raises():
+        _ = read_string(Span(buf), pos)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
