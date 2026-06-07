@@ -15,9 +15,11 @@ sint32/64, bool, string, bytes), `enum` (-> `Int32` + named constants),
 `optional` scalars and messages (proto3 explicit presence -> `Optional[T]`),
 singular nested messages, packed `repeated` numeric scalars/enums, non-packed
 `repeated` string/bytes/message (-> `List[T]`), `map<K, V>` (-> `Dict[K, V]`),
-and `oneof` (each member -> `Optional[T]`, last-one-wins on decode). Unsupported
-features (group, fixed/sfixed, proto2) raise a clear error so the generated
-code is never silently wrong.
+and `oneof` (each member -> `Optional[T]`, last-one-wins on decode). Fields whose
+type lives in an imported `.proto` resolve across files (emitting a
+`from <module> import ...`). Unsupported features (group, fixed/sfixed, proto2,
+well-known types) raise a clear error so the generated code is never silently
+wrong.
 """
 
 import sys
@@ -248,29 +250,98 @@ def _struct_name(full_name, prefix):
     return rel.lstrip(".").replace(".", "_")
 
 
-def _collect_messages(msgs, scope, package, type_map, out, map_entries):
-    """Walk messages + nested types, recording full-name -> Mojo struct name.
+def _module_path(fname):
+    # `foo/bar.proto` -> Mojo import module `foo.bar`.
+    stem = fname[:-len(".proto")] if fname.endswith(".proto") else fname
+    return stem.replace("/", ".")
 
-    Synthetic map-entry messages (a `map<K, V>` field lowers to a repeated
-    nested message with `options.map_entry`) are recorded in `map_entries`
-    (full name -> the entry descriptor, whose fields 1/2 are key/value) and
-    not emitted as structs.
+
+def _register_types(msgs, scope, package, fname, registry, file_of, map_entries):
+    """Record full-name -> (Mojo struct name, source file) across one file.
+
+    Run over every file in the request to build the global registry the
+    resolver uses for cross-file references. Synthetic map-entry messages (a
+    `map<K, V>` lowers to a repeated nested message with `options.map_entry`)
+    are recorded in `map_entries` (full name -> entry descriptor) and never
+    emitted as structs.
     """
+    prefix = "." + package if package else "."
     for m in msgs:
         full = f"{scope}.{m.name}"
         if m.options.map_entry:
             map_entries[full] = m
             continue
-        mojo = _struct_name(full, "." + package if package else ".")
-        if any(existing == mojo for existing, _ in out):
+        registry[full] = _struct_name(full, prefix)
+        file_of[full] = fname
+        _register_types(
+            m.nested_type, full, package, fname, registry, file_of, map_entries
+        )
+
+
+def _file_structs(fd):
+    """Ordered (Mojo name, descriptor) pairs to emit for one file, with a
+    per-file struct-name collision check."""
+    ordered = []
+    prefix = "." + fd.package if fd.package else "."
+
+    def walk(msgs, scope):
+        for m in msgs:
+            if m.options.map_entry:
+                continue
+            full = f"{scope}.{m.name}"
+            mojo = _struct_name(full, prefix)
+            if any(existing == mojo for existing, _ in ordered):
+                raise GenError(
+                    f"message '{full}' flattens to Mojo struct name '{mojo}', "
+                    "which collides with another message; rename one to "
+                    "disambiguate"
+                )
+            ordered.append((mojo, m))
+            walk(m.nested_type, full)
+
+    walk(fd.message_type, "." + fd.package if fd.package else "")
+    return ordered
+
+
+# Well-known google.protobuf message types map to a small builtin runtime
+# module rather than being generated. (None yet; cross-file refs to these still
+# raise a clear error pointing at the missing dependency.)
+_WELL_KNOWN = {}
+
+
+class _Resolver:
+    """Resolves a message field's Mojo type against the global registry,
+    recording a cross-module import whenever the type lives in another file."""
+
+    def __init__(self, registry, file_of, current_file, module_imports):
+        self.registry = registry
+        self.file_of = file_of
+        self.current_file = current_file
+        self.module_imports = module_imports  # module path -> set of names
+
+    def message_type(self, field):
+        fn = field.type_name
+        if fn in self.registry:
+            mojo = self.registry[fn]
+            src = self.file_of[fn]
+            if src != self.current_file:
+                self.module_imports.setdefault(
+                    _module_path(src), set()
+                ).add(mojo)
+            return mojo
+        wkt = _WELL_KNOWN.get(fn)
+        if wkt is not None:
+            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
+            return wkt[1]
+        # Not generated. Give the well-known types a dedicated message; anything
+        # else is an ungenerated dependency (or a proto2 file).
+        if fn.startswith(".google.protobuf."):
             raise GenError(
-                f"message '{full}' flattens to Mojo struct name '{mojo}', which "
-                "collides with another message; rename one to disambiguate"
+                f"field '{field.name}': well-known type '{fn}' is not supported"
             )
-        type_map[full] = mojo
-        out.append((mojo, m))
-        _collect_messages(
-            m.nested_type, full, package, type_map, out, map_entries
+        raise GenError(
+            f"field '{field.name}' references type '{fn}', whose .proto is not "
+            "among the generation targets; pass that .proto to protoc too"
         )
 
 
@@ -278,16 +349,11 @@ def _is_bytes(field):
     return field.type == FD.TYPE_BYTES
 
 
-def _field_mojo_type(field, type_map):
+def _field_mojo_type(field, ctx):
     if field.type == FD.TYPE_BYTES:
         return "List[Byte]"
     if field.type == FD.TYPE_MESSAGE:
-        if field.type_name not in type_map:
-            raise GenError(
-                f"field '{field.name}' references type '{field.type_name}' "
-                "defined outside this file (cross-file refs unsupported in v1)"
-            )
-        return type_map[field.type_name]
+        return ctx.message_type(field)
     if field.type in SCALAR:
         return SCALAR[field.type].mojo
     if field.type in _UNSUPPORTED_TYPE:
@@ -330,7 +396,7 @@ def _check_field(field, map_entries):
         raise GenError(f"field '{field.name}': proto2 required is not supported")
 
 
-def _gen_map_field(f, name, num, map_entries, type_map, imports,
+def _gen_map_field(f, name, num, map_entries, ctx, imports,
                    decls, defaults, encode_items, size_items, decode):
     """Emit a proto3 `map<K, V>` field as a Mojo `Dict[K, V]`.
 
@@ -385,7 +451,7 @@ def _gen_map_field(f, name, num, map_entries, type_map, imports,
         ]
         is_msg = False
     elif vf.type == FD.TYPE_MESSAGE:
-        vtype = _field_mojo_type(vf, type_map)
+        vtype = _field_mojo_type(vf, ctx)
         vdefault = f"{vtype}()"
         vsize, vwrite = "", []  # handled inline (encoded_size computed once)
         vread = [
@@ -396,7 +462,7 @@ def _gen_map_field(f, name, num, map_entries, type_map, imports,
     else:
         vspec = SCALAR.get(vf.type)
         if vspec is None:
-            _field_mojo_type(vf, type_map)  # raises a precise GenError
+            _field_mojo_type(vf, ctx)  # raises a precise GenError
             raise GenError(f"field '{f.name}': unsupported map value type")
         _merge_imports(imports, vspec.imports)
         vtype, vdefault = vspec.mojo, vspec.default
@@ -467,7 +533,7 @@ def _gen_map_field(f, name, num, map_entries, type_map, imports,
     ]
 
 
-def gen_message(mojo_name, desc, type_map, imports, map_entries):
+def gen_message(mojo_name, desc, ctx, imports, map_entries):
     """Return the Mojo source for one message struct."""
     fields = list(desc.field)
     for f in fields:
@@ -500,7 +566,7 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
             ]
 
         if _is_map_field(f, map_entries):
-            _gen_map_field(f, name, num, map_entries, type_map, imports,
+            _gen_map_field(f, name, num, map_entries, ctx, imports,
                            decls, defaults, encode_items, size_items, decode)
             continue
 
@@ -619,7 +685,7 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
                     f"            self.{name}.append(_b_{name}^)",
                 ]
             else:  # TYPE_MESSAGE (map entries already rejected by _check_field)
-                mt = _field_mojo_type(f, type_map)
+                mt = _field_mojo_type(f, ctx)
                 decls.append(f"    var {name}: List[{mt}]")
                 defaults.append(f"        self.{name} = List[{mt}]()")
                 _merge_imports(imports, {
@@ -649,7 +715,7 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
             continue
 
         if f.type == FD.TYPE_MESSAGE:
-            mt = _field_mojo_type(f, type_map)
+            mt = _field_mojo_type(f, ctx)
             _merge_imports(imports, {
                 "wire": {"encode_tag", "encode_varint", "WIRE_LEN"},
                 "size": {"tag_size", "varint_size"},
@@ -743,7 +809,7 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
 
         spec = SCALAR.get(f.type)
         if spec is None:
-            _field_mojo_type(f, type_map)  # raises a precise GenError
+            _field_mojo_type(f, ctx)  # raises a precise GenError
             raise GenError(f"field '{f.name}': unsupported proto type {f.type}")
         _merge_imports(imports, spec.imports)
         if optional:
@@ -844,7 +910,7 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
     return "\n".join(lines)
 
 
-def _imports_block(imports):
+def _imports_block(imports, module_imports):
     out = []
     for mod in ("message", "wire", "fields", "size"):
         names = imports.get(mod)
@@ -852,6 +918,10 @@ def _imports_block(imports):
             continue
         joined = ", ".join(sorted(names))
         out.append(f"from protobuf.{mod} import {joined}")
+    # Cross-file struct imports, one `from <module> import ...` per source file.
+    for mod in sorted(module_imports):
+        joined = ", ".join(sorted(module_imports[mod]))
+        out.append(f"from {mod} import {joined}")
     return "\n".join(out)
 
 
@@ -873,7 +943,7 @@ def _enum_constants(fd, package):
 
     def walk(msgs, scope):
         for m in msgs:
-            if m.options.map_entry:  # synthetic; skipped like _collect_messages
+            if m.options.map_entry:  # synthetic; skipped like _register_types
                 continue
             full = f"{scope}.{m.name}"
             emit(m.enum_type, full)
@@ -885,35 +955,65 @@ def _enum_constants(fd, package):
     return consts
 
 
-def gen_file(fd):
-    """Generate the .mojo source for one FileDescriptorProto."""
+def gen_file(fd, registry=None, file_of=None, map_entries=None):
+    """Generate the .mojo source for one FileDescriptorProto.
+
+    `registry`/`file_of` (full name -> Mojo struct name / source file) and
+    `map_entries` are built once across the whole request so message fields can
+    reference types from imported `.proto` files; such references emit a
+    `from <module> import <Struct>` line. When omitted they are built from `fd`
+    alone (single-file generation, e.g. tests).
+    """
     # protoc leaves `syntax` empty for proto2, so require proto3 explicitly
     # rather than only rejecting a non-empty non-proto3 value.
     if fd.syntax != "proto3":
         got = fd.syntax or "proto2"
         raise GenError(f"{fd.name}: only proto3 is supported (got {got})")
 
+    if registry is None or file_of is None or map_entries is None:
+        registry, file_of, map_entries = {}, {}, {}
+        scope = "." + fd.package if fd.package else ""
+        _register_types(
+            fd.message_type, scope, fd.package, fd.name, registry, file_of,
+            map_entries,
+        )
+
     package = fd.package
-    type_map = {}
-    ordered = []
-    map_entries = {}
-    scope = "." + package if package else ""
-    _collect_messages(
-        fd.message_type, scope, package, type_map, ordered, map_entries
-    )
+    ordered = _file_structs(fd)
+    struct_names = {mojo for mojo, _ in ordered}
+    module_imports = {}
+    ctx = _Resolver(registry, file_of, fd.name, module_imports)
 
     imports = {}
     bodies = [
-        gen_message(mojo, desc, type_map, imports, map_entries)
+        gen_message(mojo, desc, ctx, imports, map_entries)
         for mojo, desc in ordered
     ]
+
+    # A cross-file import's Mojo name must not clash with a locally generated
+    # struct or with an import from another module (flattened names are not
+    # globally unique); either would emit non-compiling Mojo.
+    imported_from = {}
+    for mod in sorted(module_imports):
+        for n in sorted(module_imports[mod]):
+            if n in struct_names:
+                raise GenError(
+                    f"imported type '{n}' (from '{mod}') collides with a struct "
+                    "defined in this file; rename one to disambiguate"
+                )
+            if n in imported_from:
+                raise GenError(
+                    f"type name '{n}' is imported from both "
+                    f"'{imported_from[n]}' and '{mod}'; rename one to "
+                    "disambiguate"
+                )
+            imported_from[n] = mod
 
     enums = _enum_constants(fd, package)
     # An enum constant must collide with neither a generated struct name nor
     # another constant, or the module would not compile. Fail loudly here rather
     # than emit broken Mojo (e.g. enum `A.B` value `C` and enum `A_B` value `C`
     # both flatten to `A_B_C`).
-    struct_names = {mojo for mojo, _ in ordered}
     seen = set()
     for name, _ in enums:
         if name in struct_names:
@@ -930,7 +1030,7 @@ def gen_file(fd):
 
     header = (
         f'"""Generated by protoc-gen-mojo from {fd.name}. Do not edit."""\n\n'
-        + _imports_block(imports)
+        + _imports_block(imports, module_imports)
         + "\n\n\n"
     )
     if enums:
@@ -946,11 +1046,28 @@ def main():
         plugin_pb2.CodeGeneratorResponse.FEATURE_PROTO3_OPTIONAL
     )
 
+    # Build the type registry over the files being GENERATED only (not every
+    # transitive import). A cross-file reference resolves and emits a
+    # `from <module> import ...` line; a reference to a type whose .proto is not
+    # a generation target (an ungenerated dep, a proto2 file, or a well-known
+    # type) is rejected rather than emitting an import to a module that will
+    # never exist.
     by_name = {f.name: f for f in request.proto_file}
+    registry = {}
+    file_of = {}
+    map_entries = {}
+    for proto_name in request.file_to_generate:
+        f = by_name[proto_name]
+        scope = "." + f.package if f.package else ""
+        _register_types(
+            f.message_type, scope, f.package, f.name, registry, file_of,
+            map_entries,
+        )
+
     for proto_name in request.file_to_generate:
         fd = by_name[proto_name]
         try:
-            content = gen_file(fd)
+            content = gen_file(fd, registry, file_of, map_entries)
         except GenError as e:
             response.error = f"{proto_name}: {e}"
             sys.stdout.buffer.write(response.SerializeToString())

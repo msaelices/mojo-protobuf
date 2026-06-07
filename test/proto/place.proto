@@ -1,0 +1,15 @@
+syntax = "proto3";
+package place;
+
+import "common.proto";
+
+// Exercises cross-file references: a message type from another .proto used as a
+// singular field, a repeated field, and a map value, plus a cross-file enum
+// (which lowers to Int32, so it needs no import).
+message Place {
+  string name = 1;
+  common.Geo location = 2;
+  repeated common.Geo waypoints = 3;
+  map<string, common.Geo> pins = 4;
+  common.Unit unit = 5;
+}

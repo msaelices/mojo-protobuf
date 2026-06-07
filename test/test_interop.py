@@ -260,6 +260,40 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+PLACE_ENC = """\
+from protobuf.message import encode
+from common import Geo
+from place import Place
+
+
+def main():
+    var p = Place()
+    p.name = String("park")
+    p.location = Geo(40.7, -74.0)
+    p.waypoints = [Geo(1.0, 2.0), Geo(3.0, 4.0)]
+    p.pins["gate"] = Geo(5.5, 6.5)
+    p.unit = Int32(1)  # common.Unit METERS
+    _print_bytes(encode(p))
+"""
+
+PLACE_DEC = """\
+from std.testing import assert_equal
+from protobuf.message import decode
+from place import Place
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[Place](Span(data))
+    assert_equal(got.name, String("park"))
+    assert_equal(got.location.lng, Float64(-74.0))
+    assert_equal(len(got.waypoints), 2)
+    assert_equal(got.waypoints[1].lat, Float64(3.0))
+    assert_equal(got.pins["gate"].lat, Float64(5.5))
+    assert_equal(got.unit, Int32(1))
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -283,7 +317,7 @@ def _gen_reference():
         subprocess.run(
             ["protoc", "-I", "test/proto", "--python_out", _TMP,
              "example.proto", "telem.proto", "enums.proto", "rep.proto",
-             "maps.proto", "oneof.proto"],
+             "maps.proto", "oneof.proto", "common.proto", "place.proto"],
             cwd=ROOT, check=True,
         )
         sys.path.insert(0, _TMP)
@@ -447,6 +481,27 @@ def test_oneof_forward_reference_encodes_mojo_decodes():
     m = pb.M(id=5, count=0, ok=True)
     assert m.WhichOneof("payload") == "count"
     _mojo_decodes(ONEOF_DEC, m.SerializeToString())
+
+
+def test_place_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("place_pb2")
+    p = pb.Place.FromString(_mojo_encode(PLACE_ENC))
+    assert p.name == "park"
+    assert abs(p.location.lat - 40.7) < 1e-9 and p.location.lng == -74.0
+    assert [(w.lat, w.lng) for w in p.waypoints] == [(1.0, 2.0), (3.0, 4.0)]
+    assert p.pins["gate"].lat == 5.5
+    assert p.unit == 1
+
+
+def test_place_forward_reference_encodes_mojo_decodes():
+    pb = _pb("place_pb2")
+    cpb = _pb("common_pb2")
+    p = pb.Place(
+        name="park", location=cpb.Geo(lat=40.7, lng=-74.0),
+        waypoints=[cpb.Geo(lat=1.0, lng=2.0), cpb.Geo(lat=3.0, lng=4.0)],
+        pins={"gate": cpb.Geo(lat=5.5, lng=6.5)}, unit=cpb.METERS,
+    )
+    _mojo_decodes(PLACE_DEC, p.SerializeToString())
 
 
 def main():
