@@ -220,14 +220,48 @@ def test_enum_constant_collides_with_struct():
     _expect_error(fd, "struct name")
 
 
-def test_oneof_unsupported():
+def test_oneof_supported():
+    # A real oneof: each member is Optional[T]; decoding one clears the others.
     fd = _file()
+    sub = fd.message_type.add()
+    sub.name = "Sub"
+    _add_field(sub, "n", 1, FD.TYPE_INT32)
     m = fd.message_type.add()
     m.name = "M"
     m.oneof_decl.add().name = "choice"
-    f = _add_field(m, "a", 1, FD.TYPE_INT64)
-    f.oneof_index = 0  # real oneof (no proto3_optional)
-    _expect_error(fd, "oneof")
+    f1 = _add_field(m, "text", 3, FD.TYPE_STRING)
+    f1.oneof_index = 0
+    f2 = _add_field(m, "count", 4, FD.TYPE_INT32)
+    f2.oneof_index = 0
+    f3 = _add_field(m, "sub", 5, FD.TYPE_MESSAGE)
+    f3.oneof_index = 0
+    f3.type_name = ".t.Sub"
+    out = gen_file(fd)
+    assert "var text: Optional[String]" in out
+    assert "var count: Optional[Int32]" in out
+    assert "var sub: Optional[Sub]" in out  # message member is optional too
+    assert "if self.text:" in out  # encode only when present
+    # decoding one member clears its siblings (last-one-wins)
+    assert "self.text = Optional[String](read_string(data, pos))" in out
+    block = out[out.index("field_number == 3:"):]
+    block = block[:block.index("field_number == 4:")]
+    assert "self.count = None" in block and "self.sub = None" in block
+
+
+def test_oneof_proto3_optional_is_not_a_oneof():
+    # A proto3 `optional` field rides a synthetic 1-member oneof; it must stay a
+    # plain Optional with no sibling-clearing, not be treated as a real oneof.
+    fd = _file()
+    m = fd.message_type.add()
+    m.name = "M"
+    m.oneof_decl.add().name = "_a"
+    f = _add_field(m, "a", 1, FD.TYPE_INT64, proto3_optional=True)
+    f.oneof_index = 0
+    out = gen_file(fd)
+    assert "var a: Optional[Int64]" in out
+    # no sibling-clearing in decode (None appears only as the __init__ default)
+    merge = out[out.index("def merge_field"):]
+    assert "self.a = None" not in merge
 
 
 def test_proto2_required_unsupported():

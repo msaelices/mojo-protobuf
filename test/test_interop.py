@@ -228,6 +228,38 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+ONEOF_ENC = """\
+from protobuf.message import encode
+from oneof import M, Inner
+
+
+def main():
+    var m = M()
+    m.id = 1
+    m.sub = Optional(Inner(9))
+    m.err = Optional(String("boom"))
+    m.trailer = String("end")
+    _print_bytes(encode(m))
+"""
+
+ONEOF_DEC = """\
+from std.testing import assert_equal, assert_true, assert_false
+from protobuf.message import decode
+from oneof import M
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[M](Span(data))
+    assert_true(got.count)
+    assert_equal(got.count.value(), Int32(0))
+    assert_false(got.text)
+    assert_false(got.sub)
+    assert_true(got.ok)
+    assert_equal(got.id, 5)
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -251,7 +283,7 @@ def _gen_reference():
         subprocess.run(
             ["protoc", "-I", "test/proto", "--python_out", _TMP,
              "example.proto", "telem.proto", "enums.proto", "rep.proto",
-             "maps.proto"],
+             "maps.proto", "oneof.proto"],
             cwd=ROOT, check=True,
         )
         sys.path.insert(0, _TMP)
@@ -398,6 +430,23 @@ def test_maps_forward_reference_encodes_mojo_decodes():
         states={"svc": pb.STATUS_OK, "db": pb.STATUS_ERR}, id=99,
     )
     _mojo_decodes(MAPS_DEC, m.SerializeToString())
+
+
+def test_oneof_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("oneof_pb2")
+    m = pb.M.FromString(_mojo_encode(ONEOF_ENC))
+    assert m.id == 1 and m.trailer == "end"
+    assert m.WhichOneof("payload") == "sub" and m.sub.n == 9
+    assert m.WhichOneof("status") == "err" and m.err == "boom"
+
+
+def test_oneof_forward_reference_encodes_mojo_decodes():
+    # count = 0 set: oneof presence is independent of value; ok=True in the
+    # second oneof. The reference clears other members, matching Mojo's decode.
+    pb = _pb("oneof_pb2")
+    m = pb.M(id=5, count=0, ok=True)
+    assert m.WhichOneof("payload") == "count"
+    _mojo_decodes(ONEOF_DEC, m.SerializeToString())
 
 
 def main():
