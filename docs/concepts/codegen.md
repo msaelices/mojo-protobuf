@@ -6,9 +6,10 @@ plugin a `CodeGeneratorRequest` (itself a protobuf message) on stdin; the plugin
 walks the descriptors and writes the generated Mojo source back on stdout.
 
 The plugin is written in Python (it reuses the mature `protobuf` library to read
-descriptors) and emits **pure Mojo** that depends only on this runtime. Writing
-the plugin in Mojo would be circular: the request it must decode uses repeated
-fields, enums, and oneofs that the runtime does not implement yet.
+descriptors) and emits **pure Mojo** that depends only on this runtime. A Mojo
+rewrite is possible now that the runtime covers the wire features the
+`CodeGeneratorRequest` itself uses, but reusing the reference descriptor parser
+keeps the plugin small.
 
 ## Running it
 
@@ -55,7 +56,8 @@ Mojo, decode in Python and vice versa).
 | `string` | `String` | UTF-8 validated on decode |
 | `bytes` | `List[Byte]` | owns its data (copied out of the input) |
 | message `M` | `M` | length-delimited nested message |
-| `optional <scalar>` | `Optional[T]` | proto3 explicit presence |
+| `optional <scalar>` / `optional M` | `Optional[T]` | proto3 explicit presence |
+| `oneof { ... }` | each member `Optional[T]` | at most one set (see below) |
 | `repeated <scalar>` | `List[T]` | proto3 **packed** (see below) |
 | `repeated string`/`bytes`/`M` | `List[String]` / `List[List[Byte]]` / `List[M]` | non-packed (see below) |
 | `map<K, V>` | `Dict[K, V]` | see below |
@@ -103,17 +105,40 @@ key wins on decode. Each entry's bytes match the reference protobuf exactly;
 entry *order* follows `Dict` iteration, which (like a proto map) is
 unspecified.
 
+### Oneofs
+
+A `oneof` groups fields where at most one is set. Each member becomes its own
+`Optional[T]` (message members included, so `sub` below is `Optional[Sub]`):
+
+```proto
+message M {
+  oneof payload {
+    string text = 3;
+    int32 count = 4;
+    Sub sub = 5;
+  }
+}
+```
+
+On the wire a oneof is nothing special: each member is a normal field with its
+own number, and at most one is serialized. Encoding writes whichever member is
+present; a scalar member set to its default value is still written (oneof
+presence is independent of value). Decoding any member clears the others, so the
+proto3 *last-one-wins* rule holds and a decoded message keeps at most one member
+present. There is no `WhichOneof` accessor: test the members directly
+(`if m.text:`). Setting a member does **not** auto-clear the others, so set at
+most one yourself; messages produced by `decode` always satisfy this.
+
 ## Not yet supported
 
 These raise a clear generator error rather than emitting wrong code:
 
-- `oneof`
 - `fixed32/64`, `sfixed32/64`
 - `group` (a deprecated proto2 feature) and proto2 syntax in general
 - cross-file message references (a field whose type is defined in an imported
   `.proto`)
 
-Singular message fields are modeled as a plain nested struct (always encoded),
-not `Optional[M]`, so message-level presence is not yet distinguished from an
-empty message; canonical proto3 omission of default-valued scalars is likewise a
-follow-up.
+A *plain* singular message field is modeled as an always-encoded nested struct,
+so its presence is not distinguished from an empty message; mark it `optional`
+(or put it in a `oneof`) to get an `Optional[M]` with real presence. Canonical
+proto3 omission of default-valued scalars is still a follow-up.
