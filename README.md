@@ -88,7 +88,8 @@ proto3). v1 covers proto3 singular scalars,
 enums (`-> Int32` + constants), `repeated` fields (`List[T]`, packed and
 non-packed), `map<K, V>` (`Dict[K, V]`), and `oneof` (each member `Optional[T]`,
 last-one-wins). Fields whose type is defined in an imported `.proto` resolve
-across files (emitting a `from <module> import ...`).
+across files (emitting a `from <module> import ...`); `google.protobuf.Timestamp`
+and `Duration` map to a builtin `protobuf.well_known` module.
 See [the code generation guide](./docs/concepts/codegen.md).
 
 ## Performance
