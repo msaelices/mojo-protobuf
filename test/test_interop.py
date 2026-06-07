@@ -157,6 +157,38 @@ def main() raises:
     print("INTEROP_OK")
 """
 
+REP_ENC = """\
+from protobuf.message import encode
+from rep import Record, Tag
+
+
+def main():
+    var r = Record()
+    r.names = [String("alice"), String("bob")]
+    r.blobs = [List[Byte]([Byte(1), Byte(2)]), List[Byte]([Byte(255)])]
+    r.tags = [Tag("env", "prod"), Tag("v", "2")]
+    _print_bytes(encode(r))
+"""
+
+REP_DEC = """\
+from std.testing import assert_equal
+from protobuf.message import decode
+from rep import Record
+
+
+def main() raises:
+    var data: List[Byte] = [%s]
+    var got = decode[Record](Span(data))
+    assert_equal(len(got.names), 2)
+    assert_equal(got.names[1], String("bob"))
+    assert_equal(len(got.blobs), 2)
+    assert_equal(got.blobs[1][0], Byte(255))
+    assert_equal(len(got.tags), 2)
+    assert_equal(got.tags[0].key, String("env"))
+    assert_equal(got.tags[1].value, String("2"))
+    print("INTEROP_OK")
+"""
+
 # A tiny helper appended to every encode driver: print the bytes as
 # space-separated decimal octets on the last line of stdout.
 _PRINT_HELPER = """
@@ -179,7 +211,7 @@ def _gen_reference():
         _TMP = tempfile.mkdtemp()
         subprocess.run(
             ["protoc", "-I", "test/proto", "--python_out", _TMP,
-             "example.proto", "telem.proto", "enums.proto"],
+             "example.proto", "telem.proto", "enums.proto", "rep.proto"],
             cwd=ROOT, check=True,
         )
         sys.path.insert(0, _TMP)
@@ -288,6 +320,23 @@ def test_enums_forward_reference_encodes_mojo_decodes():
         kind=pb.Thing.PRIMARY,
     )
     _mojo_decodes(ENUMS_DEC, t.SerializeToString())
+
+
+def test_rep_reverse_mojo_encodes_reference_decodes():
+    pb = _pb("rep_pb2")
+    r = pb.Record.FromString(_mojo_encode(REP_ENC))
+    assert list(r.names) == ["alice", "bob"], list(r.names)
+    assert list(r.blobs) == [b"\x01\x02", b"\xff"], list(r.blobs)
+    assert [(t.key, t.value) for t in r.tags] == [("env", "prod"), ("v", "2")]
+
+
+def test_rep_forward_reference_encodes_mojo_decodes():
+    pb = _pb("rep_pb2")
+    r = pb.Record(
+        names=["alice", "bob"], blobs=[b"\x01\x02", b"\xff"],
+        tags=[pb.Tag(key="env", value="prod"), pb.Tag(key="v", value="2")],
+    )
+    _mojo_decodes(REP_DEC, r.SerializeToString())
 
 
 def main():

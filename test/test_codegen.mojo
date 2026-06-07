@@ -6,6 +6,7 @@ from protobuf.message import decode, encode
 
 from enums import Color_BLUE, Color_GREEN, Color_RED, Thing, Thing_Kind_PRIMARY
 from example import AllTypes, Person, Point
+from rep import Record, Tag
 from telem import PackedAll, Telemetry
 
 
@@ -161,6 +162,30 @@ def test_codegen_enums() raises:
     assert_true(got.accent)
     assert_equal(got.accent.value(), Color_BLUE)
     assert_equal(got.kind, Thing_Kind_PRIMARY)
+
+
+def test_codegen_repeated_nonpacked() raises:
+    # Non-packed repeated: List[String], List[List[Byte]], List[message] — one
+    # tag+value per element. Messages are Copyable, so list literals work.
+    var r = Record()
+    r.names = [String("alice"), String("bob")]
+    r.blobs = [List[Byte]([Byte(1), Byte(2)]), List[Byte]([Byte(255)])]
+    r.tags = [Tag("env", "prod"), Tag("v", "2")]
+    var data = encode(r)
+    assert_equal(len(data), r.encoded_size())
+    var got = decode[Record](Span(data))
+    assert_equal(len(got.names), 2)
+    assert_equal(got.names[1], String("bob"))
+    assert_equal(len(got.blobs), 2)
+    assert_equal(got.blobs[0][1], Byte(2))
+    assert_equal(got.blobs[1][0], Byte(255))
+    assert_equal(len(got.tags), 2)
+    assert_equal(got.tags[0].key, String("env"))
+    assert_equal(got.tags[1].value, String("2"))
+
+    var empty = decode[Record](Span(encode(Record())))
+    assert_equal(len(empty.names), 0)
+    assert_equal(len(empty.tags), 0)
 
 
 def main() raises:

@@ -56,8 +56,8 @@ def test_happy_path():
     mf.type_name = ".t.Point"
 
     out = gen_file(fd)
-    assert "struct Point(Message):" in out
-    assert "struct Foo(Message):" in out
+    assert "struct Point(Message, Copyable):" in out
+    assert "struct Foo(Message, Copyable):" in out
     assert "var nick: Optional[String]" in out
     assert "var blob: List[Byte]" in out
     assert "var p: Point" in out
@@ -81,13 +81,25 @@ def test_repeated_packed_scalar_supported():
     assert "self.xs.append(read_int64(" in out  # and non-packed
 
 
-def test_repeated_string_unsupported():
-    # Non-packed repeated (string/bytes/message) is a follow-up.
+def test_repeated_nonpacked():
+    # repeated string/bytes/message -> List[...] with one tag+value per element.
     fd = _file()
+    tag = fd.message_type.add()
+    tag.name = "Tag"
+    _add_field(tag, "k", 1, FD.TYPE_STRING)
     m = fd.message_type.add()
     m.name = "M"
-    _add_field(m, "xs", 1, FD.TYPE_STRING, label=FD.LABEL_REPEATED)
-    _expect_error(fd, "repeated")
+    _add_field(m, "names", 1, FD.TYPE_STRING, label=FD.LABEL_REPEATED)
+    _add_field(m, "blobs", 2, FD.TYPE_BYTES, label=FD.LABEL_REPEATED)
+    tf = _add_field(m, "tags", 3, FD.TYPE_MESSAGE, label=FD.LABEL_REPEATED)
+    tf.type_name = ".t.Tag"
+    out = gen_file(fd)
+    assert "var names: List[String]" in out
+    assert "var blobs: List[List[Byte]]" in out
+    assert "var tags: List[Tag]" in out
+    assert "self.names.append(read_string(data, pos))" in out  # one per occurrence
+    assert "self.tags.append(decode[Tag](read_bytes(data, pos)))" in out
+    assert "for ref _e in self.names:" in out  # encode loops per element
 
 
 def test_map_unsupported():
