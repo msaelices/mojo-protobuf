@@ -321,6 +321,17 @@ class _Resolver:
 
     def message_type(self, field):
         fn = field.type_name
+        wkt = _WELL_KNOWN.get(fn)
+        if wkt is not None:
+            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
+            return wkt[1]
+        # google.protobuf well-known types arrive in the registry (protoc passes
+        # their descriptors) but are not generated, so resolving them would emit
+        # a dangling import. Reject until a builtin module backs them.
+        if fn.startswith(".google.protobuf."):
+            raise GenError(
+                f"field '{field.name}': well-known type '{fn}' is not supported"
+            )
         if fn in self.registry:
             mojo = self.registry[fn]
             src = self.file_of[fn]
@@ -329,10 +340,6 @@ class _Resolver:
                     _module_path(src), set()
                 ).add(mojo)
             return mojo
-        wkt = _WELL_KNOWN.get(fn)
-        if wkt is not None:
-            self.module_imports.setdefault(wkt[0], set()).add(wkt[1])
-            return wkt[1]
         raise GenError(
             f"field '{field.name}' references type '{fn}', which is not defined "
             "in any input file; pass the .proto that defines it to protoc too"
