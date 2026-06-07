@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Cross-implementation decode/encode comparison on three messages: a packed
-# numeric array (packed.bin), a string-heavy record (person.bin), and a real
-# LiveKit ParticipantInfo (participant.bin), on the same wire bytes. Run inside
+# Cross-implementation decode/encode comparison on four messages: a packed
+# numeric array (packed.bin), a string-heavy record (person.bin), a real LiveKit
+# ParticipantInfo (participant.bin), and a numeric LiveKit RTPStats with
+# Timestamp well-known types (rtpstats.bin), on the same wire bytes. Run inside
 # the pixi env with Go + Rust on PATH:
 #   pixi run bash benchmarks/compare/run.sh
 set -euo pipefail
@@ -19,9 +20,9 @@ mkdir -p gen go/pb
 echo "decode / encode, ns per op (lower is better):"
 printf "  %-15s %-12s %8s  %8s\n" "impl" "message" "decode" "encode"
 mojo run -I "$ROOT/src" -I gen mojo_bench.mojo 2>/dev/null | awk -F'|' '
-  /^\| (packed|person|participant)_/{gsub(/ /,"",$2);v=$3+0;if(!(($2)in b)||v<b[$2])b[$2]=v}
-  END{split("packed person participant",ms," ");
-      for(i=1;i<=3;i++){m=ms[i];
+  /^\| (packed|person|participant|rtpstats)_/{gsub(/ /,"",$2);v=$3+0;if(!(($2)in b)||v<b[$2])b[$2]=v}
+  END{split("packed person participant rtpstats",ms," ");
+      for(i=1;i<=4;i++){m=ms[i];
         printf "  %-15s %-12s %8.0f  %8.0f\n","mojo",m,b[m"_decode"]*1e6,b[m"_encode"]*1e6}}'
 fmt() { awk '{printf "  %-15s %-12s %8.0f  %8.0f\n",$1,$2,$4,$6}'; }
 python3 py_bench.py 2>/dev/null | fmt

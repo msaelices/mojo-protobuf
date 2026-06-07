@@ -61,4 +61,9 @@ func main() {
 		m := &pb.ParticipantInfo{}
 		return m, proto.Unmarshal(d, m)
 	})
+	rtpstats, _ := os.ReadFile("../rtpstats.bin")
+	run("rtpstats", rtpstats, func(d []byte) (proto.Message, error) {
+		m := &pb.RtpStats{}
+		return m, proto.Unmarshal(d, m)
+	})
 }
