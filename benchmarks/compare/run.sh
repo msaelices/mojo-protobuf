@@ -19,9 +19,9 @@ mkdir -p gen go/pb
 echo "decode / encode, ns per op (lower is better):"
 printf "  %-15s %-12s %8s  %8s\n" "impl" "message" "decode" "encode"
 mojo run -I "$ROOT/src" -I gen mojo_bench.mojo 2>/dev/null | awk -F'|' '
-  /^\| (packed|person|participant)_/{gsub(/ /,"",$2);v=$3+0;if(!(($2)in b)||v<b[$2])b[$2]=v}
-  END{split("packed person participant",ms," ");
-      for(i=1;i<=3;i++){m=ms[i];
+  /^\| (packed|person|participant|rtpstats)_/{gsub(/ /,"",$2);v=$3+0;if(!(($2)in b)||v<b[$2])b[$2]=v}
+  END{split("packed person participant rtpstats",ms," ");
+      for(i=1;i<=4;i++){m=ms[i];
         printf "  %-15s %-12s %8.0f  %8.0f\n","mojo",m,b[m"_decode"]*1e6,b[m"_encode"]*1e6}}'
 fmt() { awk '{printf "  %-15s %-12s %8.0f  %8.0f\n",$1,$2,$4,$6}'; }
 python3 py_bench.py 2>/dev/null | fmt

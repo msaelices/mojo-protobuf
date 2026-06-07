@@ -46,7 +46,9 @@ fn main() {
     let packed = std::fs::read("../packed.bin").unwrap();
     let person = std::fs::read("../person.bin").unwrap();
     let participant = std::fs::read("../participant.bin").unwrap();
+    let rtpstats = std::fs::read("../rtpstats.bin").unwrap();
     run::<Packed>("packed", &packed);
     run::<Person>("person", &person);
     run::<ParticipantInfo>("participant", &participant);
+    run::<RtpStats>("rtpstats", &rtpstats);
 }

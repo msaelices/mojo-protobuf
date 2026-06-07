@@ -1,6 +1,8 @@
 syntax = "proto3";
 package cmp;
 
+import "google/protobuf/timestamp.proto";
+
 // Packed repeated int64: the bulk-numeric decode hot path.
 message Packed {
   repeated int64 values = 1;
@@ -215,4 +217,52 @@ message ParticipantInfo {
   repeated KindDetail kind_details = 18;
   repeated DataTrackInfo data_tracks = 19;
   int32 client_protocol = 20;
+}
+
+// --- RTPStats carved from livekit_models.proto (the four RTPDrift
+// fields dropped to stay self-contained): a numeric-heavy message with
+// six google.protobuf.Timestamp fields and a map, verbatim field numbers.
+
+message RtpStats {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  double duration = 3;
+  uint32 packets = 4;
+  double packet_rate = 5;
+  uint64 bytes = 6;
+  uint64 header_bytes = 39;
+  double bitrate = 7;
+  uint32 packets_lost = 8;
+  double packet_loss_rate = 9;
+  float packet_loss_percentage = 10;
+  uint32 packets_duplicate = 11;
+  double packet_duplicate_rate = 12;
+  uint64 bytes_duplicate = 13;
+  uint64 header_bytes_duplicate = 40;
+  double bitrate_duplicate = 14;
+  uint32 packets_padding = 15;
+  double packet_padding_rate = 16;
+  uint64 bytes_padding = 17;
+  uint64 header_bytes_padding = 41;
+  double bitrate_padding = 18;
+  uint32 packets_out_of_order = 19;
+  uint32 frames = 20;
+  double frame_rate = 21;
+  double jitter_current = 22;
+  double jitter_max = 23;
+  map<int32, uint32> gap_histogram = 24;
+  uint32 nacks = 25;
+  uint32 nack_acks = 37;
+  uint32 nack_misses = 26;
+  uint32 nack_repeated = 38;
+  uint32 plis = 27;
+  google.protobuf.Timestamp last_pli = 28;
+  uint32 firs = 29;
+  google.protobuf.Timestamp last_fir = 30;
+  uint32 rtt_current = 31;
+  uint32 rtt_max = 32;
+  uint32 key_frames = 33;
+  google.protobuf.Timestamp last_key_frame = 34;
+  uint32 layer_lock_plis = 35;
+  google.protobuf.Timestamp last_layer_lock_pli = 36;
 }

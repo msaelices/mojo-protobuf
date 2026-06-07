@@ -8,7 +8,7 @@ column printed below is ns/op; run.sh reformats it into the comparison table.
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from protobuf.message import decode, encode
-from bench import Packed, Person, ParticipantInfo
+from bench import Packed, Person, ParticipantInfo, RtpStats
 
 
 def _read(path: String) raises -> List[Byte]:
@@ -40,6 +40,11 @@ def main() raises:
     # Go/Rust/Python harnesses decode), then re-encode the decoded message.
     var part_data = _read("participant.bin")
     var participant = decode[ParticipantInfo](Span(part_data))
+
+    # Real LiveKit RtpStats: numeric-heavy with six google.protobuf.Timestamp
+    # fields and a map (the well-known-type codec path).
+    var rtp_data = _read("rtpstats.bin")
+    var rtpstats = decode[RtpStats](Span(rtp_data))
 
     @parameter
     def packed_decode(mut b: Bencher) raises:
@@ -95,6 +100,24 @@ def main() raises:
         b.iter[f]()
         keep(Bool(participant.sid))
 
+    @parameter
+    def rtpstats_decode(mut b: Bencher) raises:
+        @always_inline
+        @parameter
+        def f() raises:
+            keep(Int(decode[RtpStats](Span(rtp_data)).packets))
+        b.iter[f]()
+        keep(Bool(rtp_data))
+
+    @parameter
+    def rtpstats_encode(mut b: Bencher) raises:
+        @always_inline
+        @parameter
+        def f() raises:
+            keep(Bool(encode(rtpstats)))
+        b.iter[f]()
+        keep(Int(rtpstats.packets))
+
     var m = Bench(BenchConfig(num_repetitions=10))
     m.bench_function[packed_decode](BenchId("packed_decode"))
     m.bench_function[packed_encode](BenchId("packed_encode"))
@@ -102,4 +125,6 @@ def main() raises:
     m.bench_function[person_encode](BenchId("person_encode"))
     m.bench_function[participant_decode](BenchId("participant_decode"))
     m.bench_function[participant_encode](BenchId("participant_encode"))
+    m.bench_function[rtpstats_decode](BenchId("rtpstats_decode"))
+    m.bench_function[rtpstats_encode](BenchId("rtpstats_encode"))
     print(m)
