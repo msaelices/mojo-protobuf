@@ -1,6 +1,12 @@
 """Round-trip test for protoc-gen-mojo output (regenerated into test/gen)."""
 
-from std.testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 from protobuf.message import decode, encode
 
@@ -186,6 +192,18 @@ def test_codegen_repeated_nonpacked() raises:
     var empty = decode[Record](Span(encode(Record())))
     assert_equal(len(empty.names), 0)
     assert_equal(len(empty.tags), 0)
+
+
+def test_codegen_repeated_message_malformed_raises() raises:
+    # A repeated-message element whose nested sub-message is corrupt must raise
+    # out of the per-element decode[Tag], not silently truncate. Here field 3
+    # (tags) carries a 4-byte Tag body `[10, 5, 1, 2]`: an inner string (field
+    # 1, tag 10) claims length 5 but only 2 bytes follow, so read_string runs
+    # off the sub-span.
+    var data: List[Byte] = [Byte(26), Byte(4), Byte(10), Byte(5), Byte(1),
+                            Byte(2)]
+    with assert_raises():
+        _ = decode[Record](Span(data))
 
 
 def main() raises:
