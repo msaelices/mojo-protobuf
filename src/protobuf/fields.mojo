@@ -209,13 +209,40 @@ def read_bytes(
     return decode_bytes(data, pos)
 
 
+@always_inline
+def _all_ascii(s: Span[Byte, _]) -> Bool:
+    """Returns whether every byte is < 0x80 (i.e. plain ASCII)."""
+    comptime W = simd_width_of[DType.uint8]()
+    var n = len(s)
+    var ptr = s.unsafe_ptr()
+    var i = 0
+    var acc = SIMD[DType.uint8, W](0)
+    while i + W <= n:
+        acc |= ptr.load[width=W](i)
+        i += W
+    if (acc.reduce_or() & 0x80) != 0:
+        return False
+    while i < n:
+        if ptr[i] >= 0x80:
+            return False
+        i += 1
+    return True
+
+
 def read_string(data: Span[Byte, _], mut pos: Int) raises -> String:
     """Reads a `string` value, validating its UTF-8 (tag already consumed).
+
+    ASCII (the common case) is valid UTF-8 by definition, so an all-ASCII value
+    skips the full UTF-8 validator — which is slow for short strings — after a
+    cheap SIMD high-bit scan. Non-ASCII bytes still go through full validation.
 
     Raises:
         If the bytes are not valid UTF-8, or the length is malformed.
     """
-    return String(from_utf8=decode_bytes(data, pos))
+    var view = decode_bytes(data, pos)
+    if _all_ascii(view):
+        return String(unsafe_from_utf8=view)
+    return String(from_utf8=view)
 
 
 # ===-----------------------------------------------------------------------===#

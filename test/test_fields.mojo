@@ -1,7 +1,7 @@
 from std.memory import bitcast
 from std.testing import assert_equal, assert_raises, TestSuite
 
-from protobuf.wire import decode_tag, encode_varint
+from protobuf.wire import decode_tag, encode_bytes, encode_varint
 from protobuf.fields import (
     read_bool,
     read_bytes,
@@ -275,6 +275,41 @@ def test_read_packed_empty() raises:
     var out = List[Int64]()
     read_packed_signed[DType.int64](Span(List[Byte]()), out)
     assert_equal(len(out), 0)
+
+
+def test_read_string_ascii_fast_path() raises:
+    # A long ASCII string (> SIMD width) exercises the _all_ascii SIMD loop and
+    # the unsafe (validation-skipping) fast path.
+    var s = String("the quick brown fox jumps over the lazy dog 0123456789")
+    var buf = List[Byte]()
+    encode_bytes(s.as_bytes(), buf)
+    var pos = 0
+    assert_equal(read_string(Span(buf), pos), s)
+
+    # A non-ASCII byte in a long string must be detected so it still goes
+    # through full validation (here it is valid UTF-8 and round-trips).
+    var u = String("the quick brown fox jumps over the lazy dög 0123456789")
+    var buf2 = List[Byte]()
+    encode_bytes(u.as_bytes(), buf2)
+    var pos2 = 0
+    assert_equal(read_string(Span(buf2), pos2), u)
+
+
+def test_read_string_long_invalid_utf8_raises() raises:
+    # A lone 0x80 (invalid UTF-8) past the SIMD-width boundary must be detected
+    # by the SIMD scan, not skipped — so read_string still raises. Guards the
+    # _all_ascii accumulator against missing a high bit in the chunked region.
+    var raw = List[Byte]()
+    for _ in range(40):  # > SIMD width, so the 0x80 lands in the SIMD loop
+        raw.append(Byte(0x61))  # 'a'
+    raw.append(Byte(0x80))  # lone continuation byte: invalid UTF-8
+    for _ in range(10):
+        raw.append(Byte(0x61))
+    var buf = List[Byte]()
+    encode_bytes(Span(raw), buf)
+    var pos = 0
+    with assert_raises():
+        _ = read_string(Span(buf), pos)
 
 
 def main() raises:
