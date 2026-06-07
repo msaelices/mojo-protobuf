@@ -1,7 +1,7 @@
 from std.memory import bitcast
 from std.testing import assert_equal, assert_raises, TestSuite
 
-from protobuf.wire import decode_tag
+from protobuf.wire import decode_tag, encode_varint
 from protobuf.fields import (
     read_bool,
     read_bytes,
@@ -10,6 +10,8 @@ from protobuf.fields import (
     read_fixed64,
     read_float,
     read_int64,
+    read_packed_signed,
+    read_packed_unsigned,
     read_sint64,
     read_string,
     read_uint64,
@@ -221,6 +223,58 @@ def test_double_special_values() raises:
     _double_bits_roundtrip(0xFFF0000000000000)  # -Inf
     _double_bits_roundtrip(0x7FF8000000000000)  # NaN
     _double_bits_roundtrip(0x0000000000000001)  # smallest subnormal
+
+
+def _pack_i64(vals: List[Int64]) -> List[Byte]:
+    var b = List[Byte]()
+    for v in vals:
+        encode_varint(UInt64(v), b)
+    return b^
+
+
+def test_read_packed_signed_int64() raises:
+    # A long 1-byte run (exercises the SIMD prefix across multiple chunks) then
+    # a multi-byte varint and a negative (10-byte) value via the scalar tail.
+    var vals = List[Int64]()
+    for i in range(70):
+        vals.append(Int64(i % 100))
+    vals.append(Int64(300))
+    vals.append(Int64(-5))
+    var out = List[Int64]()
+    read_packed_signed[DType.int64](Span(_pack_i64(vals)), out)
+    assert_equal(len(out), len(vals))
+    for i in range(len(vals)):
+        assert_equal(out[i], vals[i])
+
+
+def test_read_packed_signed_int32_truncates() raises:
+    var b = List[Byte]()
+    encode_varint(UInt64(Int64(-7)), b)  # int32 -7 -> 10-byte two's complement
+    encode_varint(UInt64(Int64(42)), b)
+    var out = List[Int32]()
+    read_packed_signed[DType.int32](Span(b), out)
+    assert_equal(out[0], Int32(-7))
+    assert_equal(out[1], Int32(42))
+
+
+def test_read_packed_unsigned() raises:
+    var b = List[Byte]()
+    encode_varint(UInt64(5), b)
+    encode_varint(UInt64(4000000000), b)  # > UInt32 mid-range, multi-byte
+    var u32 = List[UInt32]()
+    read_packed_unsigned[DType.uint32](Span(b), u32)
+    assert_equal(u32[0], UInt32(5))
+    assert_equal(u32[1], UInt32(4000000000))
+
+    var u64 = List[UInt64]()
+    read_packed_unsigned[DType.uint64](Span(b), u64)
+    assert_equal(u64[1], UInt64(4000000000))
+
+
+def test_read_packed_empty() raises:
+    var out = List[Int64]()
+    read_packed_signed[DType.int64](Span(List[Byte]()), out)
+    assert_equal(len(out), 0)
 
 
 def main() raises:
