@@ -148,9 +148,12 @@ message Place { common.Geo location = 2; repeated common.Geo near = 3; }
 `place.mojo` gets `from common import Geo` and fields `location: Geo`,
 `near: List[Geo]`. A cross-file *enum* needs no import (it lowers to `Int32`);
 its named constants live in the imported module. Generate the imported `.proto`
-alongside the target (pass both to protoc) and add the output dir to the Mojo
-import path so the emitted module imports resolve. A field whose type is in *no*
-input file is a clear error — pass the defining `.proto` to protoc too.
+**as a generation target too** (pass both to protoc) and add the output dir to
+the Mojo import path so the emitted module imports resolve. References that
+would not compile are rejected with a clear error rather than emitted: a type
+whose `.proto` is not a generation target (an ungenerated dependency, a proto2
+file, or a well-known type), and a flattened struct name that would clash across
+imported files or with a local struct.
 
 ## Not yet supported
 
