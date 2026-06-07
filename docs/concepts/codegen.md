@@ -99,7 +99,9 @@ encodes as its own length-delimited submessage. Keys are integral, `bool`, or
 `string`; values may be any singular type (scalar, `string`, `bytes`, nested
 message, or `enum`). Unlike normal proto3 fields, a map entry always serializes
 both key and value even at their default value, and the last occurrence of a
-key wins on decode. The output is byte-identical to the reference protobuf.
+key wins on decode. Each entry's bytes match the reference protobuf exactly;
+entry *order* follows `Dict` iteration, which (like a proto map) is
+unspecified.
 
 ## Not yet supported
 
