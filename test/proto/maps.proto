@@ -1,0 +1,22 @@
+syntax = "proto3";
+package maps;
+
+message Attr {
+  string unit = 1;
+  int64 scale = 2;
+}
+
+enum Status {
+  STATUS_NONE = 0;
+  STATUS_OK = 1;
+  STATUS_ERR = 2;
+}
+
+message Maps {
+  map<string, int32> counts = 1;   // string key, scalar value
+  map<string, string> labels = 2;  // string key, string value
+  map<int32, Attr> attrs = 3;      // integral key, message value
+  map<string, bytes> blobs = 4;    // string key, bytes value
+  map<string, Status> states = 5;  // string key, enum value
+  int64 id = 6;                    // interleaved singular field
+}

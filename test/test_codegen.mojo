@@ -12,6 +12,7 @@ from protobuf.message import decode, encode
 
 from enums import Color_BLUE, Color_GREEN, Color_RED, Thing, Thing_Kind_PRIMARY
 from example import AllTypes, Person, Point
+from maps import Attr, Maps, Status_STATUS_ERR, Status_STATUS_OK
 from rep import Record, Tag
 from telem import PackedAll, Telemetry
 
@@ -192,6 +193,45 @@ def test_codegen_repeated_nonpacked() raises:
     var empty = decode[Record](Span(encode(Record())))
     assert_equal(len(empty.names), 0)
     assert_equal(len(empty.tags), 0)
+
+
+def test_codegen_maps() raises:
+    # map<K, V> -> Dict[K, V] across every value kind: scalar, string, message,
+    # bytes, enum; with both string and integral keys and an interleaved
+    # singular field. Each entry is a length-delimited key=1/value=2 submessage.
+    var m = Maps()
+    m.counts["a"] = Int32(0)  # default value still serialized for map entries
+    m.counts["b"] = Int32(5)
+    m.labels["k"] = String("")
+    m.labels["x"] = String("héllo 🌍")  # multi-byte UTF-8 value
+    m.attrs[7] = Attr("kg", 10)
+    m.attrs[3] = Attr("", 0)  # default-valued message entry
+    m.blobs["bin"] = [Byte(1), Byte(255)]
+    m.states["svc"] = Status_STATUS_OK
+    m.states["db"] = Status_STATUS_ERR
+    m.id = 99
+
+    var data = encode(m)
+    assert_equal(len(data), m.encoded_size())  # generated size matches output
+    var got = decode[Maps](Span(data))
+    assert_equal(len(got.counts), 2)
+    assert_equal(got.counts["a"], Int32(0))
+    assert_equal(got.counts["b"], Int32(5))
+    assert_equal(got.labels["k"], String(""))
+    assert_equal(got.labels["x"], String("héllo 🌍"))
+    assert_equal(len(got.attrs), 2)
+    assert_equal(got.attrs[7].unit, String("kg"))
+    assert_equal(got.attrs[7].scale, Int64(10))
+    assert_equal(got.attrs[3].scale, Int64(0))
+    assert_equal(len(got.blobs["bin"]), 2)
+    assert_equal(got.blobs["bin"][1], Byte(255))
+    assert_equal(got.states["svc"], Status_STATUS_OK)
+    assert_equal(got.states["db"], Status_STATUS_ERR)
+    assert_equal(got.id, 99)
+
+    var empty = decode[Maps](Span(encode(Maps())))
+    assert_equal(len(empty.counts), 0)
+    assert_equal(len(empty.attrs), 0)
 
 
 def test_codegen_repeated_message_malformed_raises() raises:
