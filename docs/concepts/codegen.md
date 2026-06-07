@@ -58,6 +58,7 @@ Mojo, decode in Python and vice versa).
 | `optional <scalar>` | `Optional[T]` | proto3 explicit presence |
 | `repeated <scalar>` | `List[T]` | proto3 **packed** (see below) |
 | `repeated string`/`bytes`/`M` | `List[String]` / `List[List[Byte]]` / `List[M]` | non-packed (see below) |
+| `map<K, V>` | `Dict[K, V]` | see below |
 | `enum E` | `Int32` | + `comptime E_VALUE = Int32(n)` constants |
 
 Nested message *definitions* (a `message` declared inside another) are flattened
@@ -90,11 +91,20 @@ proto3 spec. The output is byte-identical to the reference protobuf.
 emitted once per element on encode and appended on each occurrence on decode.
 They map to `List[String]`, `List[List[Byte]]`, and `List[M]`.
 
+### Maps
+
+A `map<K, V>` becomes a `Dict[K, V]`. On the wire a map is sugar for a
+non-packed `repeated` entry message `{ K key = 1; V value = 2; }`, so each pair
+encodes as its own length-delimited submessage. Keys are integral, `bool`, or
+`string`; values may be any singular type (scalar, `string`, `bytes`, nested
+message, or `enum`). Unlike normal proto3 fields, a map entry always serializes
+both key and value even at their default value, and the last occurrence of a
+key wins on decode. The output is byte-identical to the reference protobuf.
+
 ## Not yet supported
 
 These raise a clear generator error rather than emitting wrong code:
 
-- `map<K, V>`
 - `oneof`
 - `fixed32/64`, `sfixed32/64`
 - `group` (a deprecated proto2 feature) and proto2 syntax in general
