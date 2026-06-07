@@ -1,0 +1,32 @@
+syntax = "proto3";
+package oneof;
+
+message Inner {
+  int32 n = 1;
+}
+
+enum Kind {
+  KIND_NONE = 0;
+  KIND_A = 1;
+  KIND_B = 2;
+}
+
+message M {
+  int32 id = 1;
+  oneof payload {        // members of every kind: string/scalar/message/bytes/enum
+    string text = 3;
+    int32 count = 4;
+    Inner sub = 5;
+    bytes raw = 6;
+    Kind kind = 7;
+  }
+  oneof status {         // a second, independent oneof
+    bool ok = 10;
+    string err = 11;
+  }
+  string trailer = 20;   // interleaved regular field
+}
+
+message HasOpt {
+  optional Inner maybe = 1;  // proto3 optional message -> Optional[Inner]
+}

@@ -13,6 +13,7 @@ from protobuf.message import decode, encode
 from enums import Color_BLUE, Color_GREEN, Color_RED, Thing, Thing_Kind_PRIMARY
 from example import AllTypes, Person, Point
 from maps import Attr, Maps, Status_STATUS_ERR, Status_STATUS_OK
+from oneof import HasOpt, Inner, Kind_KIND_B, M
 from rep import Record, Tag
 from telem import PackedAll, Telemetry
 
@@ -232,6 +233,54 @@ def test_codegen_maps() raises:
     var empty = decode[Maps](Span(encode(Maps())))
     assert_equal(len(empty.counts), 0)
     assert_equal(len(empty.attrs), 0)
+
+
+def test_codegen_oneof() raises:
+    # Each oneof member is Optional[T]; at most one is set; decoding a member
+    # clears its siblings (proto3 last-one-wins). Two independent oneofs.
+    var m = M()
+    m.id = 1
+    m.sub = Optional(Inner(9))  # message member of `payload`
+    m.err = Optional(String("boom"))  # member of the second oneof `status`
+    m.trailer = String("end")
+    var data = encode(m)
+    assert_equal(len(data), m.encoded_size())
+    var got = decode[M](Span(data))
+    assert_true(got.sub)
+    assert_equal(got.sub.value().n, Int32(9))
+    assert_false(got.text)  # other payload members absent
+    assert_false(got.count)
+    assert_true(got.err)
+    assert_equal(got.err.value(), String("boom"))
+    assert_false(got.ok)
+    assert_equal(got.id, 1)
+    assert_equal(got.trailer, String("end"))
+
+    # A scalar member set to its default value is still present (oneof presence
+    # is tracked independently of value), and clears siblings on decode.
+    var z = M()
+    z.count = Optional(Int32(0))
+    z.kind = Optional(Kind_KIND_B)  # setting a member does not auto-clear count
+    var gz = decode[M](Span(encode(z)))
+    # on the wire, kind (7) comes after count (4): last-wins -> kind present
+    assert_true(gz.kind)
+    assert_equal(gz.kind.value(), Kind_KIND_B)
+    assert_false(gz.count)
+
+
+def test_codegen_optional_message() raises:
+    # proto3 `optional Message` -> Optional[Inner]: present-but-empty is distinct
+    # from absent, and an absent optional message emits nothing.
+    var present = HasOpt()
+    present.maybe = Optional(Inner(0))  # present, default-valued
+    var gp = decode[HasOpt](Span(encode(present)))
+    assert_true(gp.maybe)
+    assert_equal(gp.maybe.value().n, Int32(0))
+
+    var absent = HasOpt()
+    assert_equal(len(encode(absent)), 0)  # absent emits nothing
+    var ga = decode[HasOpt](Span(encode(absent)))
+    assert_false(ga.maybe)
 
 
 def test_codegen_repeated_message_malformed_raises() raises:

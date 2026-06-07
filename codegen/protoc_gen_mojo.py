@@ -12,11 +12,12 @@ Run via:
 
 Supported: proto3 singular scalars (double, float, int32/64, uint32/64,
 sint32/64, bool, string, bytes), `enum` (-> `Int32` + named constants),
-`optional` scalars (proto3 explicit presence -> `Optional[T]`), singular nested
-messages, packed `repeated` numeric scalars/enums, non-packed `repeated`
-string/bytes/message (-> `List[T]`), and `map<K, V>` (-> `Dict[K, V]`).
-Unsupported features (oneof, group, fixed/sfixed, proto2) raise a clear error
-so the generated code is never silently wrong.
+`optional` scalars and messages (proto3 explicit presence -> `Optional[T]`),
+singular nested messages, packed `repeated` numeric scalars/enums, non-packed
+`repeated` string/bytes/message (-> `List[T]`), `map<K, V>` (-> `Dict[K, V]`),
+and `oneof` (each member -> `Optional[T]`, last-one-wins on decode). Unsupported
+features (group, fixed/sfixed, proto2) raise a clear error so the generated
+code is never silently wrong.
 """
 
 import sys
@@ -327,10 +328,6 @@ def _check_field(field, map_entries):
             )
     if field.label == FD.LABEL_REQUIRED:
         raise GenError(f"field '{field.name}': proto2 required is not supported")
-    # proto3 `optional` rides a synthetic oneof; a real oneof has no
-    # proto3_optional flag.
-    if field.HasField("oneof_index") and not field.proto3_optional:
-        raise GenError(f"field '{field.name}': oneof is not supported in v1")
 
 
 def _gen_map_field(f, name, num, map_entries, type_map, imports,
@@ -481,10 +478,26 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
     imports.setdefault("message", set()).add("Message")
     imports.setdefault("fields", set()).add("skip_field")
 
+    # Real-oneof grouping: oneof_index -> [member field names], excluding proto3
+    # synthetic-optional single-member oneofs (those are plain `Optional[T]`).
+    oneof_members = {}
+    for f in fields:
+        if f.HasField("oneof_index") and not f.proto3_optional:
+            oneof_members.setdefault(f.oneof_index, []).append(_ident(f.name))
+    # field number -> sibling-clearing decode lines (proto3 last-member-wins:
+    # decoding any member clears the others so at most one stays present).
+    oneof_clears = {}
+
     for f in fields:
         name = _ident(f.name)
         num = f.number
         optional = bool(f.proto3_optional)
+        if f.HasField("oneof_index") and not f.proto3_optional:
+            optional = True  # every oneof member is present-or-absent
+            oneof_clears[num] = [
+                f"            self.{s} = None"
+                for s in oneof_members[f.oneof_index] if s != name
+            ]
 
         if _is_map_field(f, map_entries):
             _gen_map_field(f, name, num, map_entries, type_map, imports,
@@ -637,29 +650,55 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
 
         if f.type == FD.TYPE_MESSAGE:
             mt = _field_mojo_type(f, type_map)
-            decls.append(f"    var {name}: {mt}")
-            defaults.append(f"        self.{name} = {mt}()")
-            acc = f"self.{name}"
-            encode_items.append((num, [
-                f"        encode_tag({num}, WIRE_LEN, output)",
-                f"        encode_varint(UInt64({acc}.encoded_size()), output)",
-                f"        {acc}.encode_to(output)",
-            ]))
-            size_items.append((num, [
-                f"        var _sz_{name} = {acc}.encoded_size()",
-                f"        total += tag_size({num}) + varint_size("
-                f"UInt64(_sz_{name})) + _sz_{name}",
-            ]))
-            decode += [
-                f"        if field_number == {num}:",
-                f"            self.{name} = decode[{mt}](read_bytes(data, pos))",
-            ]
             _merge_imports(imports, {
                 "wire": {"encode_tag", "encode_varint", "WIRE_LEN"},
                 "size": {"tag_size", "varint_size"},
                 "fields": {"read_bytes"},
                 "message": {"decode"},
             })
+            if optional:
+                # `optional Message` / oneof message member: present-or-absent.
+                decls.append(f"    var {name}: Optional[{mt}]")
+                defaults.append(f"        self.{name} = None")
+                v = f"self.{name}.value()"
+                encode_items.append((num, [
+                    f"        if self.{name}:",
+                    f"            encode_tag({num}, WIRE_LEN, output)",
+                    f"            encode_varint(UInt64({v}.encoded_size()), "
+                    f"output)",
+                    f"            {v}.encode_to(output)",
+                ]))
+                size_items.append((num, [
+                    f"        if self.{name}:",
+                    f"            var _sz_{name} = {v}.encoded_size()",
+                    f"            total += tag_size({num}) + varint_size("
+                    f"UInt64(_sz_{name})) + _sz_{name}",
+                ]))
+                decode += [
+                    f"        if field_number == {num}:",
+                    f"            self.{name} = Optional[{mt}]("
+                    f"decode[{mt}](read_bytes(data, pos)))",
+                ]
+            else:
+                decls.append(f"    var {name}: {mt}")
+                defaults.append(f"        self.{name} = {mt}()")
+                acc = f"self.{name}"
+                encode_items.append((num, [
+                    f"        encode_tag({num}, WIRE_LEN, output)",
+                    f"        encode_varint(UInt64({acc}.encoded_size()), "
+                    f"output)",
+                    f"        {acc}.encode_to(output)",
+                ]))
+                size_items.append((num, [
+                    f"        var _sz_{name} = {acc}.encoded_size()",
+                    f"        total += tag_size({num}) + varint_size("
+                    f"UInt64(_sz_{name})) + _sz_{name}",
+                ]))
+                decode += [
+                    f"        if field_number == {num}:",
+                    f"            self.{name} = "
+                    f"decode[{mt}](read_bytes(data, pos))",
+                ]
             continue
 
         if _is_bytes(f):
@@ -735,6 +774,22 @@ def gen_message(mojo_name, desc, type_map, imports, map_entries):
                 f"        if field_number == {num}:",
                 f"            self.{name} = {spec.read()}",
             ]
+
+    # Append sibling-clears at the end of each oneof member's decode block, so
+    # decoding one member resets the others (oneof members never nest a second
+    # `if field_number ==`, so a block ends at the next one or end-of-list).
+    if oneof_clears:
+        injected, cur = [], None
+        for line in decode:
+            s = line.lstrip()
+            if s.startswith("if field_number == "):
+                if cur in oneof_clears:
+                    injected += oneof_clears[cur]
+                cur = int(s[len("if field_number == "):].rstrip(":"))
+            injected.append(line)
+        if cur in oneof_clears:
+            injected += oneof_clears[cur]
+        decode = injected
 
     # Emit fields on the wire in ascending field-number order (canonical), even
     # if the .proto declares them out of order.

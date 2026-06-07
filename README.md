@@ -7,7 +7,7 @@ A pure-[Mojo](https://www.modular.com/mojo) implementation of
 > a reflection-derived typed-message API, and a `protoc` plugin
 > (`protoc-gen-mojo`) for proto3 scalars, `optional`, nested messages, packed
 > `repeated` numeric scalars, enums, non-packed `repeated`
-> (string/bytes/message), and `map<K, V>` are implemented; oneofs are next.
+> (string/bytes/message), `map<K, V>`, and `oneof` are implemented.
 
 ## Why
 
@@ -83,9 +83,10 @@ protoc -I proto \
 Each message becomes a struct conforming to `Message` with the real (possibly
 non-sequential) field numbers, so the generated code round-trips against the
 reference protobuf implementation on the wire. v1 covers proto3 singular scalars,
-`optional` scalars (explicit presence), singular nested messages, enums
-(`-> Int32` + constants), `repeated` fields (`List[T]`, packed and non-packed),
-and `map<K, V>` (`Dict[K, V]`); oneofs raise a clear generator error for now.
+`optional` scalars and messages (explicit presence), singular nested messages,
+enums (`-> Int32` + constants), `repeated` fields (`List[T]`, packed and
+non-packed), `map<K, V>` (`Dict[K, V]`), and `oneof` (each member `Optional[T]`,
+last-one-wins).
 See [the code generation guide](./docs/concepts/codegen.md).
 
 ## Performance
@@ -132,8 +133,8 @@ Design notes and concept guides live in [`docs/`](./docs/):
    reflection-derived `encode`/`decode`/`encoded_size`, overridable per message.
 4. ✅ **`protoc` plugin** (`protoc-gen-mojo`) — generate Mojo message structs from
    `.proto` files (proto3 scalars, `optional`, nested messages).
-5. ⏳ **Repeated fields, maps, enums, oneofs** — packed/non-packed `repeated`,
-   enums, and `map<K, V>` done (generator); oneofs next.
+5. ✅ **Repeated fields, maps, enums, oneofs** — packed/non-packed `repeated`,
+   enums, `map<K, V>`, and `oneof` done (generator).
 6. **Generated bindings** — real schemas such as
    [`livekit/protocol`](https://github.com/livekit/protocol).
 
