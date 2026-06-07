@@ -56,4 +56,9 @@ func main() {
 		m := &pb.Person{}
 		return m, proto.Unmarshal(d, m)
 	})
+	participant, _ := os.ReadFile("../participant.bin")
+	run("participant", participant, func(d []byte) (proto.Message, error) {
+		m := &pb.ParticipantInfo{}
+		return m, proto.Unmarshal(d, m)
+	})
 }

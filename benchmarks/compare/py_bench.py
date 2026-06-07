@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Decode/encode timing for the reference protobuf (upb C backend).
 
-Times two messages — a packed numeric array (`packed.bin`) and a string-heavy
-record (`person.bin`) — in a warm loop, reporting nanoseconds per op for
-comparison with the Mojo, Go, and Rust harnesses on the same bytes.
+Times three messages — a packed numeric array (`packed.bin`), a string-heavy
+record (`person.bin`), and a real LiveKit `ParticipantInfo` (`participant.bin`)
+— in a warm loop, reporting nanoseconds per op for comparison with the Mojo,
+Go, and Rust harnesses on the same bytes.
 """
 
 import os
@@ -57,8 +58,11 @@ def main():
     pb = _pb()
     packed = open(os.path.join(HERE, "packed.bin"), "rb").read()
     person = open(os.path.join(HERE, "person.bin"), "rb").read()
+    participant = open(os.path.join(HERE, "participant.bin"), "rb").read()
     _bench(pb.Packed, packed, lambda m: len(m.values), "packed")
     _bench(pb.Person, person, lambda m: m.address.city, "person")
+    _bench(pb.ParticipantInfo, participant, lambda m: len(m.tracks),
+           "participant")
 
 
 if __name__ == "__main__":
