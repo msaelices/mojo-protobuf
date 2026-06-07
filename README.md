@@ -86,7 +86,8 @@ reference protobuf implementation on the wire. v1 covers proto3 singular scalars
 `optional` scalars and messages (explicit presence), singular nested messages,
 enums (`-> Int32` + constants), `repeated` fields (`List[T]`, packed and
 non-packed), `map<K, V>` (`Dict[K, V]`), and `oneof` (each member `Optional[T]`,
-last-one-wins).
+last-one-wins). Fields whose type is defined in an imported `.proto` resolve
+across files (emitting a `from <module> import ...`).
 See [the code generation guide](./docs/concepts/codegen.md).
 
 ## Performance

@@ -129,14 +129,37 @@ present. There is no `WhichOneof` accessor: test the members directly
 (`if m.text:`). Setting a member does **not** auto-clear the others, so set at
 most one yourself; messages produced by `decode` always satisfy this.
 
+### Cross-file references
+
+A field whose type is defined in an imported `.proto` resolves across files: the
+generator builds a registry over every file protoc passes it (the targets plus
+their transitive imports) and emits a `from <module> import <Struct>` line, where
+the module path mirrors the source file (`foo/bar.proto` -> `foo.bar`).
+
+```proto
+// common.proto, package common
+message Geo { double lat = 1; double lng = 2; }
+
+// place.proto, package place
+import "common.proto";
+message Place { common.Geo location = 2; repeated common.Geo near = 3; }
+```
+
+`place.mojo` gets `from common import Geo` and fields `location: Geo`,
+`near: List[Geo]`. A cross-file *enum* needs no import (it lowers to `Int32`);
+its named constants live in the imported module. Generate the imported `.proto`
+alongside the target (pass both to protoc) and add the output dir to the Mojo
+import path so the emitted module imports resolve. A field whose type is in *no*
+input file is a clear error — pass the defining `.proto` to protoc too.
+
 ## Not yet supported
 
 These raise a clear generator error rather than emitting wrong code:
 
 - `fixed32/64`, `sfixed32/64`
 - `group` (a deprecated proto2 feature) and proto2 syntax in general
-- cross-file message references (a field whose type is defined in an imported
-  `.proto`)
+- well-known types (`google.protobuf.Timestamp`, etc.) — a cross-file reference
+  to one errors until a builtin module is provided
 
 A *plain* singular message field is modeled as an always-encoded nested struct,
 so its presence is not distinguished from an empty message; mark it `optional`
