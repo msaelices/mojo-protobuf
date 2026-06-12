@@ -439,6 +439,29 @@ def test_cross_file_name_collision_with_local():
     raise AssertionError("expected a local/import name-collision GenError")
 
 
+def test_enum_constant_collides_with_imported_type():
+    # An enum constant whose flattened name equals a cross-file imported struct
+    # name would emit `from dep import Color_RED` + `comptime Color_RED = ...`
+    # -> non-compiling Mojo. Detect and error instead.
+    dep = descriptor_pb2.FileDescriptorProto()
+    dep.name, dep.syntax, dep.package = "dep.proto", "proto3", "d"
+    dep.message_type.add().name = "Color_RED"
+    t = descriptor_pb2.FileDescriptorProto()
+    t.name, t.syntax, t.package = "t.proto", "proto3", "t"
+    e = t.enum_type.add()
+    e.name = "Color"
+    e.value.add(name="RED", number=0)
+    m = t.message_type.add()
+    m.name = "M"
+    _add_field(m, "x", 1, FD.TYPE_MESSAGE).type_name = ".d.Color_RED"
+    try:
+        gen_file(t, *_registry(dep, t))
+    except GenError as e:
+        assert "collides with a type imported from" in str(e), e
+        return
+    raise AssertionError("expected an enum/import name-collision GenError")
+
+
 def test_proto2_unsupported():
     # protoc leaves `syntax` empty for proto2; an empty syntax must be rejected,
     # otherwise a proto2 `optional` scalar would silently lose presence.
