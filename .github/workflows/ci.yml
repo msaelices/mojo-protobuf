@@ -14,8 +14,7 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.1
         with:
           pixi-version: latest
-          # Enable once a pixi.lock is committed.
-          cache: false
+          cache: true
 
       - name: Run tests
         run: pixi run test
