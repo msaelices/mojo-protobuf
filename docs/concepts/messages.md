@@ -129,7 +129,7 @@ be plain fields — they'd be infinitely sized — so they need indirection (an
 acyclic nesting. `decode` default-constructs the message, so
 fields absent from the wire keep their defaults — protobuf's missing-field
 semantics — and `encode` reserves the buffer with `encoded_size()`, so it does
-zero reallocations (see [`protobuf.size`](wire-format.md)).
+zero reallocations (see [`protobuf.size`](../../src/protobuf/size.mojo)).
 
 ### Zero-allocation encoding
 

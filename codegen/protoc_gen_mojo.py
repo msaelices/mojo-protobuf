@@ -304,9 +304,6 @@ def _file_structs(fd):
     return ordered
 
 
-# Well-known google.protobuf message types map to a small builtin runtime
-# module rather than being generated. (None yet; cross-file refs to these still
-# raise a clear error pointing at the missing dependency.)
 # google.protobuf well-known message types backed by a builtin runtime module
 # (protobuf.well_known) instead of being generated. full proto name -> (module,
 # Mojo struct name).
