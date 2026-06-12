@@ -1044,16 +1044,21 @@ def gen_file(fd, registry=None, file_of=None, map_entries=None):
             imported_from[n] = mod
 
     enums = _enum_constants(fd, package)
-    # An enum constant must collide with neither a generated struct name nor
-    # another constant, or the module would not compile. Fail loudly here rather
-    # than emit broken Mojo (e.g. enum `A.B` value `C` and enum `A_B` value `C`
-    # both flatten to `A_B_C`).
+    # An enum constant must collide with neither a generated struct name, nor a
+    # cross-file imported name, nor another constant, or the module would not
+    # compile. Fail loudly here rather than emit broken Mojo (e.g. enum `A.B`
+    # value `C` and enum `A_B` value `C` both flatten to `A_B_C`).
     seen = set()
     for name, _ in enums:
         if name in struct_names:
             raise GenError(
                 f"enum constant '{name}' collides with a generated struct name;"
                 " rename the enum or value to disambiguate"
+            )
+        if name in imported_from:
+            raise GenError(
+                f"enum constant '{name}' collides with a type imported from "
+                f"'{imported_from[name]}'; rename one to disambiguate"
             )
         if name in seen:
             raise GenError(
