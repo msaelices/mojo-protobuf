@@ -457,8 +457,11 @@ struct OptScalars(Message):
 
 def test_optional_all_present() raises:
     var m = OptScalars(
-        7, Optional(String("ada")), Optional(Int64(42)),
-        Optional(Float64(-2.5)), Optional(Bool(True)),
+        7,
+        Optional(String("ada")),
+        Optional(Int64(42)),
+        Optional(Float64(-2.5)),
+        Optional(Bool(True)),
     )
     var bytes = encode(m)
     assert_equal(len(bytes), m.encoded_size())
@@ -538,8 +541,11 @@ struct OptWide(Message):
 def test_optional_wide_types() raises:
     var payload: List[Byte] = [Byte(0x00), Byte(0xFF), Byte(0x10)]
     var m = OptWide(
-        Optional(Int(-5)), Optional(Int32(-1)), Optional(UInt32.MAX),
-        Optional(UInt64(123456789)), Optional(Float32(1.5)),
+        Optional(Int(-5)),
+        Optional(Int32(-1)),
+        Optional(UInt32.MAX),
+        Optional(UInt64(123456789)),
+        Optional(Float32(1.5)),
         Optional(payload.copy()),
     )
     var bytes = encode(m)
@@ -612,6 +618,52 @@ def test_optional_last_wins() raises:
     var got = decode[OptScalars](Span(buf))
     assert_true(got.age)
     assert_equal(got.age.value(), 2)
+
+
+# An `Optional` nested-message field: explicit presence for messages, handled
+# by the reflection default since the inner type is peeled generically.
+@fieldwise_init
+struct OptNested(Message):
+    var id: Int64
+    var inner: Optional[Inner]
+
+    def __init__(out self):
+        self.id = 0
+        self.inner = None
+
+
+def test_optional_message_roundtrip() raises:
+    var m = OptNested(3, Optional(Inner(42, "hi")))
+    var bytes = encode(m)
+    assert_equal(len(bytes), m.encoded_size())
+    var got = decode[OptNested](Span(bytes))
+    assert_equal(got.id, 3)
+    assert_true(got.inner)
+    assert_equal(got.inner.value().x, 42)
+    assert_equal(got.inner.value().label, "hi")
+
+
+def test_optional_message_absent_emits_nothing() raises:
+    var m = OptNested()
+    m.id = 9
+    var bytes = encode(m)
+    assert_equal(len(bytes), m.encoded_size())
+    assert_equal(len(bytes), int64_field_size(1, 9))  # nothing but field 1
+    var got = decode[OptNested](Span(bytes))
+    assert_false(got.inner)
+
+
+def test_optional_message_present_but_default_is_written() raises:
+    # Presence is independent of the inner value: a present all-default nested
+    # message still emits its (empty) length-delimited field, so it decodes
+    # back present — distinguishable from an absent one.
+    var m = OptNested(0, Optional(Inner()))
+    var bytes = encode(m)
+    assert_equal(len(bytes), m.encoded_size())
+    var got = decode[OptNested](Span(bytes))
+    assert_true(got.inner)
+    assert_equal(got.inner.value().x, 0)
+    assert_equal(got.inner.value().label, "")
 
 
 def main() raises:
