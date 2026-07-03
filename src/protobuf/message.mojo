@@ -100,7 +100,7 @@ comptime _OPT_FLOAT32_NAME = reflect[Optional[Float32]].name()
 comptime _OPT_FLOAT64_NAME = reflect[Optional[Float64]].name()
 
 
-trait Message(Defaultable, Movable, ImplicitlyDestructible):
+trait Message(Defaultable, Movable, ImplicitlyDeletable):
     """A type that can be serialized to and from the protobuf wire format.
 
     The three methods have **default implementations driven by reflection**: a
