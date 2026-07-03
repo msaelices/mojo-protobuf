@@ -57,10 +57,24 @@ def main() raises:
     var p = _participant()
     var pbytes = encode(p)
     var pg = decode[ParticipantInfo](Span(pbytes))
-    print("ParticipantInfo:", pg.identity, "with", len(pg.tracks), "tracks,",
-          len(pg.attributes), "attributes,", len(pbytes), "bytes")
-    print("  track[0]:", pg.tracks[0].name, pg.tracks[0].width, "x",
-          pg.tracks[0].height)
+    print(
+        "ParticipantInfo:",
+        pg.identity,
+        "with",
+        len(pg.tracks),
+        "tracks,",
+        len(pg.attributes),
+        "attributes,",
+        len(pbytes),
+        "bytes",
+    )
+    print(
+        "  track[0]:",
+        pg.tracks[0].name,
+        pg.tracks[0].width,
+        "x",
+        pg.tracks[0].height,
+    )
 
     # An RTPStats with google.protobuf.Timestamp well-known-type fields.
     var s = RTPStats()

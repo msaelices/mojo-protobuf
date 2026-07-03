@@ -90,8 +90,16 @@ def test_varint_max_is_10_bytes() raises:
 def test_varint_overlong_raises() raises:
     # 10 continuation bytes: the loop passes 64 bits without terminating.
     var data: List[Byte] = [
-        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80),
-        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
     ]
     var pos = 0
     with assert_raises():
@@ -111,8 +119,16 @@ def test_varint_noncanonical_10th_byte() raises:
     # Lenient: high bits in the 10th byte are masked (see decode_varint notes).
     # 9 zero-payload bytes then 0x7F -> 0x7F << 63.
     var data: List[Byte] = [
-        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80),
-        Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x80), Byte(0x7F),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x80),
+        Byte(0x7F),
     ]
     var pos = 0
     var got = decode_varint(Span(data), pos)
@@ -314,7 +330,9 @@ def test_encode_fixed_generic() raises:
     var b32u = List[Byte]()
     encode_fixed[DType.uint32](UInt32(0x12345678), b32u)
     var p32u = 0
-    assert_equal(decode_fixed[DType.uint32](Span(b32u), p32u), UInt32(0x12345678))
+    assert_equal(
+        decode_fixed[DType.uint32](Span(b32u), p32u), UInt32(0x12345678)
+    )
 
     # An off-power width (not used by protobuf) proves it is width-generic.
     var b16 = List[Byte]()
