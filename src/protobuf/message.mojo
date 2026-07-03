@@ -75,32 +75,21 @@ comptime _BYTES_NAME = reflect[List[Byte]].name()
 comptime _FLOAT32_NAME = reflect[Float32].name()
 comptime _FLOAT64_NAME = reflect[Float64].name()
 
-# `Optional[T]` field names, used to add proto3 explicit-presence semantics: an
-# absent (`None`) optional emits nothing, while a present one emits its inner
-# value exactly like the corresponding plain field (so a present-but-zero scalar
-# is still written, which is how presence is distinguished from absence on the
-# wire). Reflection cannot peel the inner `T` from an `Optional[T]` field type
-# generically (the type is erased to `AnyType` and `Optional`'s `T` sits behind
-# a `Variant`), so each supported inner type is matched by name, mirroring the
-# plain-field dispatch above.
-#
-# TODO: collapse these arms once Mojo reflection can return a field's concrete
-# type by index (`reflect[T].field_type[idx].T`). Then the inner `T` could be
-# peeled generically and a single helper would replace the per-type enumeration.
-# See https://github.com/modular/modular/issues/6645
-comptime _OPT_INT_NAME = reflect[Optional[Int]].name()
-comptime _OPT_INT32_NAME = reflect[Optional[Int32]].name()
-comptime _OPT_INT64_NAME = reflect[Optional[Int64]].name()
-comptime _OPT_UINT32_NAME = reflect[Optional[UInt32]].name()
-comptime _OPT_UINT64_NAME = reflect[Optional[UInt64]].name()
-comptime _OPT_BOOL_NAME = reflect[Optional[Bool]].name()
-comptime _OPT_STRING_NAME = reflect[Optional[String]].name()
-comptime _OPT_BYTES_NAME = reflect[Optional[List[Byte]]].name()
-comptime _OPT_FLOAT32_NAME = reflect[Optional[Float32]].name()
-comptime _OPT_FLOAT64_NAME = reflect[Optional[Float64]].name()
+# `Optional[T]` fields add proto3 explicit-presence semantics: an absent
+# (`None`) optional emits nothing, while a present one emits its inner value
+# exactly like the corresponding plain field (so a present-but-zero scalar is
+# still written, which is how presence is distinguished from absence on the
+# wire). An optional field is detected by `reflect[Self].field_at[idx]`'s
+# `base_name()`, and its inner `T` is recovered generically as
+# `Optional.Element` (the member alias backing `Optional`'s `Iterator`
+# conformance, which a trait-bounded helper may access) — so the optional path
+# reuses the same per-type helpers as plain fields instead of enumerating
+# `Optional[T]` names by hand. A same-named user type is rejected by the
+# full-name `comptime assert` in the helpers, mirroring the collision safety
+# above.
 
 
-trait Message(Defaultable, Movable, ImplicitlyDeletable):
+trait Message(Defaultable, ImplicitlyDeletable, Movable):
     """A type that can be serialized to and from the protobuf wire format.
 
     The three methods have **default implementations driven by reflection**: a
@@ -113,13 +102,13 @@ trait Message(Defaultable, Movable, ImplicitlyDeletable):
     (length-delimited). Any other type is a compile error unless the methods are
     overridden.
 
-    Wrapping any of those scalar types in `Optional` gives proto3 **explicit
+    Wrapping any supported field type in `Optional` gives proto3 **explicit
     presence**: an absent (`None`) field emits nothing and decodes back to
     `None`, while a present field is encoded exactly like its plain counterpart.
     This distinguishes "unset" from a default value, so a present-but-zero scalar
-    (e.g. `Optional(Int64(0))`) is still written. `Optional` of a nested
-    `Message` is not handled by the reflection default (the inner type cannot be
-    recovered generically); use an override for that.
+    (e.g. `Optional(Int64(0))`) is still written. This includes nested messages:
+    an `Optional` field whose inner type conforms to `Message` emits a (possibly
+    empty) length-delimited field when present and nothing when `None`.
 
     Truly recursive messages (a type that contains itself) need indirection
     (e.g. an `OwnedPointer` field) and an explicit override; the reflection
@@ -139,151 +128,40 @@ trait Message(Defaultable, Movable, ImplicitlyDeletable):
         """
         var total = 0
         comptime for idx in range(reflect[Self].field_count()):
-            comptime field_type = reflect[Self].field_types()[idx]
-            comptime name = reflect[field_type].name()
+            comptime FT = reflect[Self].field_at[idx]
             ref f = reflect[Self].field_ref[idx](self)
-            comptime if name == _INT_NAME:
-                total += int64_field_size(idx + 1, Int64(rebind[Int](f)))
-            elif name == _INT32_NAME:
-                total += int64_field_size(idx + 1, Int64(rebind[Int32](f)))
-            elif name == _INT64_NAME:
-                total += int64_field_size(idx + 1, rebind[Int64](f))
-            elif name == _UINT32_NAME:
-                total += uint64_field_size(idx + 1, UInt64(rebind[UInt32](f)))
-            elif name == _UINT64_NAME:
-                total += uint64_field_size(idx + 1, rebind[UInt64](f))
-            elif name == _BOOL_NAME:
-                total += bool_field_size(idx + 1)
-            elif name == _STRING_NAME:
-                total += string_field_size(idx + 1, rebind[String](f))
-            elif name == _BYTES_NAME:
-                total += bytes_field_size(idx + 1, Span(rebind[List[Byte]](f)))
-            elif name == _FLOAT32_NAME:
-                total += fixed32_field_size(idx + 1)
-            elif name == _FLOAT64_NAME:
-                total += fixed64_field_size(idx + 1)
-            elif name == _OPT_INT_NAME:
-                ref o = rebind[Optional[Int]](f)
-                if o:
-                    total += int64_field_size(idx + 1, Int64(o.value()))
-            elif name == _OPT_INT32_NAME:
-                ref o = rebind[Optional[Int32]](f)
-                if o:
-                    total += int64_field_size(idx + 1, Int64(o.value()))
-            elif name == _OPT_INT64_NAME:
-                ref o = rebind[Optional[Int64]](f)
-                if o:
-                    total += int64_field_size(idx + 1, o.value())
-            elif name == _OPT_UINT32_NAME:
-                ref o = rebind[Optional[UInt32]](f)
-                if o:
-                    total += uint64_field_size(idx + 1, UInt64(o.value()))
-            elif name == _OPT_UINT64_NAME:
-                ref o = rebind[Optional[UInt64]](f)
-                if o:
-                    total += uint64_field_size(idx + 1, o.value())
-            elif name == _OPT_BOOL_NAME:
-                ref o = rebind[Optional[Bool]](f)
-                if o:
-                    total += bool_field_size(idx + 1)
-            elif name == _OPT_STRING_NAME:
-                ref o = rebind[Optional[String]](f)
-                if o:
-                    total += string_field_size(idx + 1, o.value())
-            elif name == _OPT_BYTES_NAME:
-                ref o = rebind[Optional[List[Byte]]](f)
-                if o:
-                    total += bytes_field_size(idx + 1, Span(o.value()))
-            elif name == _OPT_FLOAT32_NAME:
-                ref o = rebind[Optional[Float32]](f)
-                if o:
-                    total += fixed32_field_size(idx + 1)
-            elif name == _OPT_FLOAT64_NAME:
-                ref o = rebind[Optional[Float64]](f)
-                if o:
-                    total += fixed64_field_size(idx + 1)
-            elif conforms_to(field_type, Message):
-                var sub = _message_size(rebind[field_type](f))
-                total += tag_size(idx + 1) + varint_size(UInt64(sub)) + sub
+            comptime if FT.base_name() == "Optional":
+                # `conforms_to` (unlike the name check) narrows `FT.T` so the
+                # field can bind to the `OptT: Iterator` helper parameter.
+                comptime if conforms_to(FT.T, Iterator):
+                    total += _optional_field_size(idx + 1, f)
+                else:
+                    comptime assert (
+                        False
+                    ), "Message: unsupported Optional-like field type"
+            elif conforms_to(FT.T, Message):
+                total += _message_field_size(idx + 1, rebind[FT.T](f))
             else:
-                comptime assert False, "Message: unsupported field type"
+                total += _scalar_field_size[FT.T](idx + 1, f)
         return total
 
     def encode_to(self, mut output: List[Byte]):
-        """Appends this message's fields to `output` (by reflection by default)."""
+        """Appends this message's fields to `output` (by reflection by default).
+        """
         comptime for idx in range(reflect[Self].field_count()):
-            comptime field_type = reflect[Self].field_types()[idx]
-            comptime name = reflect[field_type].name()
+            comptime FT = reflect[Self].field_at[idx]
             ref f = reflect[Self].field_ref[idx](self)
-            comptime if name == _INT_NAME:
-                write_int64(idx + 1, Int64(rebind[Int](f)), output)
-            elif name == _INT32_NAME:
-                write_int64(idx + 1, Int64(rebind[Int32](f)), output)
-            elif name == _INT64_NAME:
-                write_int64(idx + 1, rebind[Int64](f), output)
-            elif name == _UINT32_NAME:
-                write_uint64(idx + 1, UInt64(rebind[UInt32](f)), output)
-            elif name == _UINT64_NAME:
-                write_uint64(idx + 1, rebind[UInt64](f), output)
-            elif name == _BOOL_NAME:
-                write_bool(idx + 1, rebind[Bool](f), output)
-            elif name == _STRING_NAME:
-                write_string(idx + 1, rebind[String](f), output)
-            elif name == _BYTES_NAME:
-                write_bytes(idx + 1, Span(rebind[List[Byte]](f)), output)
-            elif name == _FLOAT32_NAME:
-                write_float(idx + 1, rebind[Float32](f), output)
-            elif name == _FLOAT64_NAME:
-                write_double(idx + 1, rebind[Float64](f), output)
-            elif name == _OPT_INT_NAME:
-                ref o = rebind[Optional[Int]](f)
-                if o:
-                    write_int64(idx + 1, Int64(o.value()), output)
-            elif name == _OPT_INT32_NAME:
-                ref o = rebind[Optional[Int32]](f)
-                if o:
-                    write_int64(idx + 1, Int64(o.value()), output)
-            elif name == _OPT_INT64_NAME:
-                ref o = rebind[Optional[Int64]](f)
-                if o:
-                    write_int64(idx + 1, o.value(), output)
-            elif name == _OPT_UINT32_NAME:
-                ref o = rebind[Optional[UInt32]](f)
-                if o:
-                    write_uint64(idx + 1, UInt64(o.value()), output)
-            elif name == _OPT_UINT64_NAME:
-                ref o = rebind[Optional[UInt64]](f)
-                if o:
-                    write_uint64(idx + 1, o.value(), output)
-            elif name == _OPT_BOOL_NAME:
-                ref o = rebind[Optional[Bool]](f)
-                if o:
-                    write_bool(idx + 1, o.value(), output)
-            elif name == _OPT_STRING_NAME:
-                ref o = rebind[Optional[String]](f)
-                if o:
-                    write_string(idx + 1, o.value(), output)
-            elif name == _OPT_BYTES_NAME:
-                ref o = rebind[Optional[List[Byte]]](f)
-                if o:
-                    write_bytes(idx + 1, Span(o.value()), output)
-            elif name == _OPT_FLOAT32_NAME:
-                ref o = rebind[Optional[Float32]](f)
-                if o:
-                    write_float(idx + 1, o.value(), output)
-            elif name == _OPT_FLOAT64_NAME:
-                ref o = rebind[Optional[Float64]](f)
-                if o:
-                    write_double(idx + 1, o.value(), output)
-            elif conforms_to(field_type, Message):
-                # A nested message is length-delimited: tag, byte length, bytes.
-                encode_tag(idx + 1, WIRE_LEN, output)
-                encode_varint(
-                    UInt64(_message_size(rebind[field_type](f))), output
-                )
-                _append_message(rebind[field_type](f), output)
+            comptime if FT.base_name() == "Optional":
+                comptime if conforms_to(FT.T, Iterator):
+                    _write_optional_field(idx + 1, f, output)
+                else:
+                    comptime assert (
+                        False
+                    ), "Message: unsupported Optional-like field type"
+            elif conforms_to(FT.T, Message):
+                _write_message_field(idx + 1, rebind[FT.T](f), output)
             else:
-                comptime assert False, "Message: unsupported field type"
+                _write_scalar_field[FT.T](idx + 1, f, output)
 
     def merge_field(
         mut self,
@@ -307,115 +185,234 @@ trait Message(Defaultable, Movable, ImplicitlyDeletable):
         var handled = False
         comptime for idx in range(reflect[Self].field_count()):
             if field_number == idx + 1:
-                comptime field_type = reflect[Self].field_types()[idx]
-                comptime name = reflect[field_type].name()
-                comptime if name == _INT_NAME:
-                    rebind[Int](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Int(read_int64(data, pos))
-                elif name == _INT32_NAME:
-                    rebind[Int32](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Int32(read_int64(data, pos))
-                elif name == _INT64_NAME:
-                    rebind[Int64](
-                        reflect[Self].field_ref[idx](self)
-                    ) = read_int64(data, pos)
-                elif name == _UINT32_NAME:
-                    rebind[UInt32](
-                        reflect[Self].field_ref[idx](self)
-                    ) = UInt32(read_uint64(data, pos))
-                elif name == _UINT64_NAME:
-                    rebind[UInt64](
-                        reflect[Self].field_ref[idx](self)
-                    ) = read_uint64(data, pos)
-                elif name == _BOOL_NAME:
-                    rebind[Bool](
-                        reflect[Self].field_ref[idx](self)
-                    ) = read_bool(data, pos)
-                elif name == _STRING_NAME:
-                    rebind[String](
-                        reflect[Self].field_ref[idx](self)
-                    ) = read_string(data, pos)
-                elif name == _BYTES_NAME:
-                    var owned = List[Byte]()
-                    owned.extend(read_bytes(data, pos))
-                    rebind[List[Byte]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = owned^
-                elif name == _FLOAT32_NAME:
-                    rebind[Float32](
-                        reflect[Self].field_ref[idx](self)
-                    ) = read_float(data, pos)
-                elif name == _FLOAT64_NAME:
-                    rebind[Float64](
-                        reflect[Self].field_ref[idx](self)
-                    ) = read_double(data, pos)
-                elif name == _OPT_INT_NAME:
-                    rebind[Optional[Int]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[Int](Int(read_int64(data, pos)))
-                elif name == _OPT_INT32_NAME:
-                    rebind[Optional[Int32]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[Int32](Int32(read_int64(data, pos)))
-                elif name == _OPT_INT64_NAME:
-                    rebind[Optional[Int64]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[Int64](read_int64(data, pos))
-                elif name == _OPT_UINT32_NAME:
-                    rebind[Optional[UInt32]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[UInt32](UInt32(read_uint64(data, pos)))
-                elif name == _OPT_UINT64_NAME:
-                    rebind[Optional[UInt64]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[UInt64](read_uint64(data, pos))
-                elif name == _OPT_BOOL_NAME:
-                    rebind[Optional[Bool]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[Bool](read_bool(data, pos))
-                elif name == _OPT_STRING_NAME:
-                    rebind[Optional[String]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[String](read_string(data, pos))
-                elif name == _OPT_BYTES_NAME:
-                    var owned = List[Byte]()
-                    owned.extend(read_bytes(data, pos))
-                    rebind[Optional[List[Byte]]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[List[Byte]](owned^)
-                elif name == _OPT_FLOAT32_NAME:
-                    rebind[Optional[Float32]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[Float32](read_float(data, pos))
-                elif name == _OPT_FLOAT64_NAME:
-                    rebind[Optional[Float64]](
-                        reflect[Self].field_ref[idx](self)
-                    ) = Optional[Float64](read_double(data, pos))
-                elif conforms_to(field_type, Message):
-                    rebind[field_type](
-                        reflect[Self].field_ref[idx](self)
-                    ) = decode[field_type](read_bytes(data, pos))
+                comptime FT = reflect[Self].field_at[idx]
+                comptime if FT.base_name() == "Optional":
+                    comptime if conforms_to(FT.T, Iterator):
+                        _merge_optional_field(
+                            reflect[Self].field_ref[idx](self), data, pos
+                        )
+                    else:
+                        comptime assert (
+                            False
+                        ), "Message: unsupported Optional-like field type"
+                elif conforms_to(FT.T, Message):
+                    rebind[FT.T](reflect[Self].field_ref[idx](self)) = decode[
+                        FT.T
+                    ](read_bytes(data, pos))
                 else:
-                    comptime assert False, "Message: unsupported field type"
+                    _merge_scalar_field(
+                        reflect[Self].field_ref[idx](self), data, pos
+                    )
                 handled = True
         if not handled:
             skip_field(data, pos, wire_type)
 
 
-# Small `Message`-bound helpers, called from the `conforms_to(..., Message)`
-# branch of the reflection default so a nested-message field can be sized and
-# encoded generically. They are pure forwarders, so always inline them.
-@always_inline
-def _message_size[MessageType: Message](msg: MessageType) -> Int:
-    return msg.encoded_size()
+# `Optional[T]` field helpers. The message methods reach these when a field's
+# `base_name()` is `Optional`; the field binds to `OptT: Iterator` (which
+# `Optional` conforms to), making `OptT.Element` — the inner `T` — legal to
+# name in generic code. The full-name `comptime assert` then rejects any
+# same-named non-stdlib type, and the value is rebound to `Optional[Inner]`
+# and dispatched through the same per-type helpers as plain fields.
 
 
 @always_inline
-def _append_message[
+def _optional_field_size[OptT: Iterator](field_number: Int, o: OptT) -> Int:
+    comptime Inner = OptT.Element
+    comptime assert (
+        reflect[OptT].name() == reflect[Optional[Inner]].name()
+    ), "Message: unsupported Optional-like field type"
+    ref opt = rebind[Optional[Inner]](o)
+    if not opt:
+        return 0
+    comptime if conforms_to(Inner, Message):
+        return _message_field_size(field_number, opt.value())
+    else:
+        return _scalar_field_size[Inner](field_number, opt.value())
+
+
+@always_inline
+def _write_optional_field[
+    OptT: Iterator
+](field_number: Int, o: OptT, mut output: List[Byte]):
+    comptime Inner = OptT.Element
+    comptime assert (
+        reflect[OptT].name() == reflect[Optional[Inner]].name()
+    ), "Message: unsupported Optional-like field type"
+    ref opt = rebind[Optional[Inner]](o)
+    if opt:
+        comptime if conforms_to(Inner, Message):
+            _write_message_field(field_number, opt.value(), output)
+        else:
+            _write_scalar_field[Inner](field_number, opt.value(), output)
+
+
+@always_inline
+def _merge_optional_field[
+    OptT: Iterator
+](mut dst: OptT, data: Span[Byte, _], mut pos: Int) raises:
+    comptime Inner = OptT.Element
+    comptime assert (
+        reflect[OptT].name() == reflect[Optional[Inner]].name()
+    ), "Message: unsupported Optional-like field type"
+    ref opt = rebind[Optional[Inner]](dst)
+    comptime if conforms_to(Inner, Message):
+        opt = Optional[Inner](decode[Inner](read_bytes(data, pos)))
+    else:
+        opt = Optional[Inner](_read_scalar[Inner](data, pos))
+
+
+# Per-type codec dispatch shared by the plain and `Optional[T]` field paths.
+# Each helper matches the field (or peeled inner) type by reflected name and
+# forwards to the corresponding `protobuf.fields` / `protobuf.size` helper; a
+# type that matches no arm is a compile error. Always inline them so the
+# dispatch collapses into the message methods.
+
+
+@always_inline
+def _scalar_field_size[T: AnyType](field_number: Int, value: T) -> Int:
+    comptime name = reflect[T].name()
+    comptime if name == _INT_NAME:
+        return int64_field_size(field_number, Int64(rebind[Int](value)))
+    elif name == _INT32_NAME:
+        return int64_field_size(field_number, Int64(rebind[Int32](value)))
+    elif name == _INT64_NAME:
+        return int64_field_size(field_number, rebind[Int64](value))
+    elif name == _UINT32_NAME:
+        return uint64_field_size(field_number, UInt64(rebind[UInt32](value)))
+    elif name == _UINT64_NAME:
+        return uint64_field_size(field_number, rebind[UInt64](value))
+    elif name == _BOOL_NAME:
+        return bool_field_size(field_number)
+    elif name == _STRING_NAME:
+        return string_field_size(field_number, rebind[String](value))
+    elif name == _BYTES_NAME:
+        return bytes_field_size(field_number, Span(rebind[List[Byte]](value)))
+    elif name == _FLOAT32_NAME:
+        return fixed32_field_size(field_number)
+    elif name == _FLOAT64_NAME:
+        return fixed64_field_size(field_number)
+    else:
+        comptime assert False, "Message: unsupported field type"
+
+
+@always_inline
+def _write_scalar_field[
+    T: AnyType
+](field_number: Int, value: T, mut output: List[Byte]):
+    comptime name = reflect[T].name()
+    comptime if name == _INT_NAME:
+        write_int64(field_number, Int64(rebind[Int](value)), output)
+    elif name == _INT32_NAME:
+        write_int64(field_number, Int64(rebind[Int32](value)), output)
+    elif name == _INT64_NAME:
+        write_int64(field_number, rebind[Int64](value), output)
+    elif name == _UINT32_NAME:
+        write_uint64(field_number, UInt64(rebind[UInt32](value)), output)
+    elif name == _UINT64_NAME:
+        write_uint64(field_number, rebind[UInt64](value), output)
+    elif name == _BOOL_NAME:
+        write_bool(field_number, rebind[Bool](value), output)
+    elif name == _STRING_NAME:
+        write_string(field_number, rebind[String](value), output)
+    elif name == _BYTES_NAME:
+        write_bytes(field_number, Span(rebind[List[Byte]](value)), output)
+    elif name == _FLOAT32_NAME:
+        write_float(field_number, rebind[Float32](value), output)
+    elif name == _FLOAT64_NAME:
+        write_double(field_number, rebind[Float64](value), output)
+    else:
+        comptime assert False, "Message: unsupported field type"
+
+
+@always_inline
+def _merge_scalar_field[
+    T: AnyType
+](mut dst: T, data: Span[Byte, _], mut pos: Int) raises:
+    comptime name = reflect[T].name()
+    comptime if name == _INT_NAME:
+        rebind[Int](dst) = Int(read_int64(data, pos))
+    elif name == _INT32_NAME:
+        rebind[Int32](dst) = Int32(read_int64(data, pos))
+    elif name == _INT64_NAME:
+        rebind[Int64](dst) = read_int64(data, pos)
+    elif name == _UINT32_NAME:
+        rebind[UInt32](dst) = UInt32(read_uint64(data, pos))
+    elif name == _UINT64_NAME:
+        rebind[UInt64](dst) = read_uint64(data, pos)
+    elif name == _BOOL_NAME:
+        rebind[Bool](dst) = read_bool(data, pos)
+    elif name == _STRING_NAME:
+        rebind[String](dst) = read_string(data, pos)
+    elif name == _BYTES_NAME:
+        var owned = List[Byte]()
+        owned.extend(read_bytes(data, pos))
+        rebind[List[Byte]](dst) = owned^
+    elif name == _FLOAT32_NAME:
+        rebind[Float32](dst) = read_float(data, pos)
+    elif name == _FLOAT64_NAME:
+        rebind[Float64](dst) = read_double(data, pos)
+    else:
+        comptime assert False, "Message: unsupported field type"
+
+
+@always_inline
+def _read_scalar[T: Movable](data: Span[Byte, _], mut pos: Int) raises -> T:
+    """Reads one scalar value as `T`; the `Optional[T]` merge path uses this
+    to build the wrapped value (`T` is `Optional`'s param, hence `Movable`)."""
+    comptime name = reflect[T].name()
+    comptime if name == _INT_NAME:
+        var v = Int(read_int64(data, pos))
+        return rebind_var[T](v)
+    elif name == _INT32_NAME:
+        var v = Int32(read_int64(data, pos))
+        return rebind_var[T](v)
+    elif name == _INT64_NAME:
+        var v = read_int64(data, pos)
+        return rebind_var[T](v)
+    elif name == _UINT32_NAME:
+        var v = UInt32(read_uint64(data, pos))
+        return rebind_var[T](v)
+    elif name == _UINT64_NAME:
+        var v = read_uint64(data, pos)
+        return rebind_var[T](v)
+    elif name == _BOOL_NAME:
+        var v = read_bool(data, pos)
+        return rebind_var[T](v)
+    elif name == _STRING_NAME:
+        var v = read_string(data, pos)
+        return rebind_var[T](v^)
+    elif name == _BYTES_NAME:
+        var v = List[Byte]()
+        v.extend(read_bytes(data, pos))
+        return rebind_var[T](v^)
+    elif name == _FLOAT32_NAME:
+        var v = read_float(data, pos)
+        return rebind_var[T](v)
+    elif name == _FLOAT64_NAME:
+        var v = read_double(data, pos)
+        return rebind_var[T](v)
+    else:
+        comptime assert False, "Message: unsupported field type"
+
+
+# Nested-message field helpers (tag, byte length, bytes), called from the
+# `conforms_to(..., Message)` branches so a message-typed field can be sized
+# and encoded generically. Pure forwarders, so always inline them.
+@always_inline
+def _message_field_size[
     MessageType: Message
-](msg: MessageType, mut output: List[Byte]):
+](field_number: Int, msg: MessageType) -> Int:
+    var sub = msg.encoded_size()
+    return tag_size(field_number) + varint_size(UInt64(sub)) + sub
+
+
+@always_inline
+def _write_message_field[
+    MessageType: Message
+](field_number: Int, msg: MessageType, mut output: List[Byte]):
+    encode_tag(field_number, WIRE_LEN, output)
+    encode_varint(UInt64(msg.encoded_size()), output)
     msg.encode_to(output)
 
 
@@ -436,9 +433,7 @@ def encode[MessageType: Message](msg: MessageType) -> List[Byte]:
     return output^
 
 
-def decode[
-    MessageType: Message
-](data: Span[Byte, _]) raises -> MessageType:
+def decode[MessageType: Message](data: Span[Byte, _]) raises -> MessageType:
     """Deserializes a message from `data`.
 
     Default-constructs a `MessageType`, then reads every `(tag, value)` pair,
