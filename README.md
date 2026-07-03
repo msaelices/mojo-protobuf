@@ -61,9 +61,9 @@ def main() raises:
     print(line.label, line.end.x, line.end.y)                      # diagonal 3 4
 ```
 
-Make a scalar field `Optional[T]` for proto3 **explicit presence**: an absent
-(`None`) field emits nothing and decodes back to `None`, so "unset" is
-distinguishable from a default value.
+Make a field `Optional[T]` (scalar or nested message) for proto3 **explicit
+presence**: an absent (`None`) field emits nothing and decodes back to `None`,
+so "unset" is distinguishable from a default value.
 
 Need custom field numbers or types reflection doesn't cover? Override
 `encode_to` / `merge_field` / `encoded_size` — see
