@@ -161,9 +161,7 @@ def decode_tag(data: Span[Byte, _], mut pos: Int) raises -> Tuple[Int, Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-def encode_fixed[
-    dtype: DType
-](value: Scalar[dtype], mut output: List[Byte]):
+def encode_fixed[dtype: DType](value: Scalar[dtype], mut output: List[Byte]):
     """Appends `value`'s bits as little-endian bytes, one per 8 bits of `dtype`.
 
     For protobuf this is used at widths 4 (`fixed32`/`sfixed32`/`float`) and 8
@@ -217,7 +215,8 @@ def encode_fixed32(value: UInt32, mut output: List[Byte]):
 
 
 def decode_fixed32(data: Span[Byte, _], mut pos: Int) raises -> UInt32:
-    """Reads 4 little-endian bytes (`WIRE_I32`); raises if fewer than 4 remain."""
+    """Reads 4 little-endian bytes (`WIRE_I32`); raises if fewer than 4 remain.
+    """
     return decode_fixed[DType.uint32](data, pos)
 
 
@@ -227,7 +226,8 @@ def encode_fixed64(value: UInt64, mut output: List[Byte]):
 
 
 def decode_fixed64(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
-    """Reads 8 little-endian bytes (`WIRE_I64`); raises if fewer than 8 remain."""
+    """Reads 8 little-endian bytes (`WIRE_I64`); raises if fewer than 8 remain.
+    """
     return decode_fixed[DType.uint64](data, pos)
 
 

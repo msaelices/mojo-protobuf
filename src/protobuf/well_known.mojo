@@ -13,7 +13,7 @@ from protobuf.size import int64_field_size
 
 
 @fieldwise_init
-struct Timestamp(Message, Copyable):
+struct Timestamp(Copyable, Message):
     var seconds: Int64
     var nanos: Int32
 
@@ -51,7 +51,7 @@ struct Timestamp(Message, Copyable):
 
 
 @fieldwise_init
-struct Duration(Message, Copyable):
+struct Duration(Copyable, Message):
     var seconds: Int64
     var nanos: Int32
 

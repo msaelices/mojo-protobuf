@@ -404,8 +404,14 @@ def test_codegen_repeated_message_malformed_raises() raises:
     # (tags) carries a 4-byte Tag body `[10, 5, 1, 2]`: an inner string (field
     # 1, tag 10) claims length 5 but only 2 bytes follow, so read_string runs
     # off the sub-span.
-    var data: List[Byte] = [Byte(26), Byte(4), Byte(10), Byte(5), Byte(1),
-                            Byte(2)]
+    var data: List[Byte] = [
+        Byte(26),
+        Byte(4),
+        Byte(10),
+        Byte(5),
+        Byte(1),
+        Byte(2),
+    ]
     with assert_raises():
         _ = decode[Record](Span(data))
 

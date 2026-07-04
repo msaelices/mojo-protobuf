@@ -109,7 +109,9 @@ def write_double(field_number: Int, value: Float64, mut output: List[Byte]):
     encode_fixed[DType.float64](value, output)
 
 
-def write_bytes(field_number: Int, value: Span[Byte, _], mut output: List[Byte]):
+def write_bytes(
+    field_number: Int, value: Span[Byte, _], mut output: List[Byte]
+):
     """Writes a `bytes` (or embedded message) field, length-delimited."""
     encode_tag(field_number, WIRE_LEN, output)
     encode_bytes(value, output)

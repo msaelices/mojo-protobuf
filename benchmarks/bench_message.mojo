@@ -41,8 +41,14 @@ struct ManyInts(Message):
     var h: Int64
 
     def __init__(out self):
-        self.a = 0; self.b = 0; self.c = 0; self.d = 0
-        self.e = 0; self.f = 0; self.g = 0; self.h = 0
+        self.a = 0
+        self.b = 0
+        self.c = 0
+        self.d = 0
+        self.e = 0
+        self.f = 0
+        self.g = 0
+        self.h = 0
 
 
 @fieldwise_init
@@ -129,6 +135,7 @@ def bench_encode_small_reused(mut b: Bencher) raises:
 
     b.iter[call_fn]()
     keep(Bool(msg.name))
+    keep(Bool(buf))
 
 
 @parameter
@@ -146,6 +153,7 @@ def bench_encode_large_reused(mut b: Bencher) raises:
 
     b.iter[call_fn]()
     keep(Bool(msg.name))
+    keep(Bool(buf))
 
 
 @parameter

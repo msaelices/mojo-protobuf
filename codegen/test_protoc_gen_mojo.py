@@ -59,8 +59,8 @@ def test_happy_path():
     mf.type_name = ".t.Point"
 
     out = gen_file(fd)
-    assert "struct Point(Message, Copyable):" in out
-    assert "struct Foo(Message, Copyable):" in out
+    assert "struct Point(Copyable, Message):" in out
+    assert "struct Foo(Copyable, Message):" in out
     assert "var nick: Optional[String]" in out
     assert "var blob: List[Byte]" in out
     assert "var p: Point" in out

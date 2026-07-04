@@ -916,7 +916,7 @@ def gen_message(mojo_name, desc, ctx, imports, map_entries):
         lines.append("@fieldwise_init")
     # Copyable so messages can be held in a `List` (repeated message fields) and
     # copied like the value types they are; the encode path still reads by `ref`.
-    lines.append(f"struct {mojo_name}(Message, Copyable):")
+    lines.append(f"struct {mojo_name}(Copyable, Message):")
     lines += decls if decls else []
     lines.append("")
     lines.append("    def __init__(out self):")

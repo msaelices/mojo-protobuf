@@ -99,7 +99,7 @@ an `int64` varint. A field whose type itself conforms to `Message` is encoded as
 a **nested message** (length-delimited), so message composition works out of the
 box. Any other type is a compile error (unless you override the methods).
 
-Wrapping any of those scalar types in `Optional` gives proto3 **explicit
+Wrapping any supported field type in `Optional` gives proto3 **explicit
 presence**. An absent (`None`) field emits nothing and decodes back to `None`,
 while a present field is encoded exactly like its plain counterpart:
 
@@ -119,9 +119,9 @@ var named = encode(Profile(2, String("ada")))  # field 2 is a normal string
 
 Because presence is independent of value, a present-but-zero scalar
 (`Optional(Int64(0))`) is still written, which is exactly what distinguishes
-"unset" from "set to the default". `Optional` of a nested `Message` is not
-covered by the reflection default (its inner type cannot be recovered
-generically) and needs an override.
+"unset" from "set to the default". This includes nested messages: an
+`Optional` field whose inner type conforms to `Message` emits a (possibly
+empty) length-delimited field when present and nothing when `None`.
 
 Truly recursive messages (a type that contains itself, e.g. a tree node) can't
 be plain fields — they'd be infinitely sized — so they need indirection (an

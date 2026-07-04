@@ -52,6 +52,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(len(decode[Packed](Span(pdata)).values))
+
         b.iter[f]()
         keep(Bool(pdata))
 
@@ -61,6 +62,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(Bool(encode(p)))
+
         b.iter[f]()
         keep(Bool(p.values))
 
@@ -70,6 +72,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(Bool(decode[Person](Span(person_data)).name))
+
         b.iter[f]()
         keep(Bool(person_data))
 
@@ -79,6 +82,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(Bool(encode(person)))
+
         b.iter[f]()
         keep(Bool(person.name))
 
@@ -88,6 +92,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(len(decode[ParticipantInfo](Span(part_data)).tracks))
+
         b.iter[f]()
         keep(Bool(part_data))
 
@@ -97,6 +102,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(Bool(encode(participant)))
+
         b.iter[f]()
         keep(Bool(participant.sid))
 
@@ -106,6 +112,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(Int(decode[RtpStats](Span(rtp_data)).packets))
+
         b.iter[f]()
         keep(Bool(rtp_data))
 
@@ -115,6 +122,7 @@ def main() raises:
         @parameter
         def f() raises:
             keep(Bool(encode(rtpstats)))
+
         b.iter[f]()
         keep(Int(rtpstats.packets))
 

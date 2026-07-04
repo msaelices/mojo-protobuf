@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "mojo-protobuf"
 version = "0.1.0"
 description = "A pure-Mojo Protocol Buffers implementation"
@@ -10,6 +10,7 @@ readme = "README.md"
 
 [dependencies]
 max = "*"
+mojo = "*"
 protobuf = "*"
 libprotobuf = "*"
 
