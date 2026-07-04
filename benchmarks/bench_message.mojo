@@ -135,6 +135,7 @@ def bench_encode_small_reused(mut b: Bencher) raises:
 
     b.iter[call_fn]()
     keep(Bool(msg.name))
+    keep(Bool(buf))
 
 
 @parameter
@@ -152,6 +153,7 @@ def bench_encode_large_reused(mut b: Bencher) raises:
 
     b.iter[call_fn]()
     keep(Bool(msg.name))
+    keep(Bool(buf))
 
 
 @parameter
