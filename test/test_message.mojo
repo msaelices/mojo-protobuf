@@ -149,8 +149,8 @@ def test_encode_reserves_exactly() raises:
     # capacity == length proves no reallocation happened.
     var p = Person(-12345, "a longer name to force several appends", True)
     var bytes = encode(p)
-    assert_equal(bytes.capacity, p.encoded_size())
-    assert_equal(bytes.capacity, len(bytes))
+    assert_equal(bytes.capacity(), p.encoded_size())
+    assert_equal(bytes.capacity(), len(bytes))
 
 
 def test_reflection_default_roundtrip() raises:
