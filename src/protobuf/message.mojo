@@ -81,15 +81,15 @@ comptime _FLOAT64_NAME = reflect[Float64].name()
 # still written, which is how presence is distinguished from absence on the
 # wire). An optional field is detected by `reflect[Self].field_at[idx]`'s
 # `base_name()`, and its inner `T` is recovered generically as
-# `Optional.Element` (the member alias backing `Optional`'s `Iterator`
-# conformance, which a trait-bounded helper may access) — so the optional path
-# reuses the same per-type helpers as plain fields instead of enumerating
-# `Optional[T]` names by hand. A same-named user type is rejected by the
-# full-name `comptime assert` in the helpers, mirroring the collision safety
-# above.
+# `Optional.IteratorType[...].Element` (the member alias backing `Optional`'s
+# `Iterable` conformance, which a trait-bounded helper may access) — so the
+# optional path reuses the same per-type helpers as plain fields instead of
+# enumerating `Optional[T]` names by hand. A same-named user type is rejected
+# by the full-name `comptime assert` in the helpers, mirroring the collision
+# safety above.
 
 
-trait Message(Defaultable, ImplicitlyDeletable, Movable):
+trait Message(Defaultable, Deinitable, Movable):
     """A type that can be serialized to and from the protobuf wire format.
 
     The three methods have **default implementations driven by reflection**: a
@@ -132,8 +132,8 @@ trait Message(Defaultable, ImplicitlyDeletable, Movable):
             ref f = reflect[Self].field_ref[idx](self)
             comptime if FT.base_name() == "Optional":
                 # `conforms_to` (unlike the name check) narrows `FT.T` so the
-                # field can bind to the `OptT: Iterator` helper parameter.
-                comptime if conforms_to(FT.T, Iterator):
+                # field can bind to the `OptT: Iterable` helper parameter.
+                comptime if conforms_to(FT.T, Iterable):
                     total += _optional_field_size(idx + 1, f)
                 else:
                     comptime assert (
@@ -152,7 +152,7 @@ trait Message(Defaultable, ImplicitlyDeletable, Movable):
             comptime FT = reflect[Self].field_at[idx]
             ref f = reflect[Self].field_ref[idx](self)
             comptime if FT.base_name() == "Optional":
-                comptime if conforms_to(FT.T, Iterator):
+                comptime if conforms_to(FT.T, Iterable):
                     _write_optional_field(idx + 1, f, output)
                 else:
                     comptime assert (
@@ -187,7 +187,7 @@ trait Message(Defaultable, ImplicitlyDeletable, Movable):
             if field_number == idx + 1:
                 comptime FT = reflect[Self].field_at[idx]
                 comptime if FT.base_name() == "Optional":
-                    comptime if conforms_to(FT.T, Iterator):
+                    comptime if conforms_to(FT.T, Iterable):
                         _merge_optional_field(
                             reflect[Self].field_ref[idx](self), data, pos
                         )
@@ -209,16 +209,16 @@ trait Message(Defaultable, ImplicitlyDeletable, Movable):
 
 
 # `Optional[T]` field helpers. The message methods reach these when a field's
-# `base_name()` is `Optional`; the field binds to `OptT: Iterator` (which
-# `Optional` conforms to), making `OptT.Element` — the inner `T` — legal to
-# name in generic code. The full-name `comptime assert` then rejects any
-# same-named non-stdlib type, and the value is rebound to `Optional[Inner]`
-# and dispatched through the same per-type helpers as plain fields.
+# `base_name()` is `Optional`; the field binds to `OptT: Iterable` (which
+# `Optional` conforms to), making `OptT.IteratorType[...].Element` — the inner
+# `T` — legal to name in generic code. The full-name `comptime assert` then
+# rejects any same-named non-stdlib type, and the value is rebound to an
+# `Optional` and dispatched through the same per-type helpers as plain fields.
 
 
 @always_inline
-def _optional_field_size[OptT: Iterator](field_number: Int, o: OptT) -> Int:
-    comptime Inner = OptT.Element
+def _optional_field_size[OptT: Iterable](field_number: Int, o: OptT) -> Int:
+    comptime Inner = OptT.IteratorType[ImmutAnyOrigin].Element
     comptime assert (
         reflect[OptT].name() == reflect[Optional[Inner]].name()
     ), "Message: unsupported Optional-like field type"
@@ -233,9 +233,9 @@ def _optional_field_size[OptT: Iterator](field_number: Int, o: OptT) -> Int:
 
 @always_inline
 def _write_optional_field[
-    OptT: Iterator
+    OptT: Iterable
 ](field_number: Int, o: OptT, mut output: List[Byte]):
-    comptime Inner = OptT.Element
+    comptime Inner = OptT.IteratorType[ImmutAnyOrigin].Element
     comptime assert (
         reflect[OptT].name() == reflect[Optional[Inner]].name()
     ), "Message: unsupported Optional-like field type"
@@ -249,17 +249,59 @@ def _write_optional_field[
 
 @always_inline
 def _merge_optional_field[
-    OptT: Iterator
+    OptT: Iterable
 ](mut dst: OptT, data: Span[Byte, _], mut pos: Int) raises:
-    comptime Inner = OptT.Element
+    comptime Inner = OptT.IteratorType[ImmutAnyOrigin].Element
     comptime assert (
         reflect[OptT].name() == reflect[Optional[Inner]].name()
     ), "Message: unsupported Optional-like field type"
-    ref opt = rebind[Optional[Inner]](dst)
+    # Overwriting the field destroys whatever it held, so the `Optional` written
+    # to must be `Deinitable`, which it only is once its inner type is — and
+    # `Iterable` bounds the element as `Movable` alone. `conforms_to` narrows
+    # `Inner` against a user trait, so the nested-message arm gets that bound for
+    # free by binding to `T: Message`; it does not narrow against the builtin
+    # `Deinitable`, so the scalar arms name a concrete inner type instead, using
+    # the same reflected-name dispatch as the plain scalar helpers below.
     comptime if conforms_to(Inner, Message):
-        opt = Optional[Inner](decode[Inner](read_bytes(data, pos)))
+        _merge_optional_message(rebind[Optional[Inner]](dst), data, pos)
     else:
-        opt = Optional[Inner](_read_scalar[Inner](data, pos))
+        comptime name = reflect[Inner].name()
+        comptime if name == _INT_NAME:
+            _merge_optional_scalar[Int](dst, data, pos)
+        elif name == _INT32_NAME:
+            _merge_optional_scalar[Int32](dst, data, pos)
+        elif name == _INT64_NAME:
+            _merge_optional_scalar[Int64](dst, data, pos)
+        elif name == _UINT32_NAME:
+            _merge_optional_scalar[UInt32](dst, data, pos)
+        elif name == _UINT64_NAME:
+            _merge_optional_scalar[UInt64](dst, data, pos)
+        elif name == _BOOL_NAME:
+            _merge_optional_scalar[Bool](dst, data, pos)
+        elif name == _STRING_NAME:
+            _merge_optional_scalar[String](dst, data, pos)
+        elif name == _BYTES_NAME:
+            _merge_optional_scalar[List[Byte]](dst, data, pos)
+        elif name == _FLOAT32_NAME:
+            _merge_optional_scalar[Float32](dst, data, pos)
+        elif name == _FLOAT64_NAME:
+            _merge_optional_scalar[Float64](dst, data, pos)
+        else:
+            comptime assert False, "Message: unsupported field type"
+
+
+@always_inline
+def _merge_optional_message[
+    T: Message
+](mut opt: Optional[T], data: Span[Byte, _], mut pos: Int) raises:
+    opt = Optional[T](decode[T](read_bytes(data, pos)))
+
+
+@always_inline
+def _merge_optional_scalar[
+    T: Deinitable & Movable, OptT: Iterable
+](mut dst: OptT, data: Span[Byte, _], mut pos: Int) raises:
+    rebind[Optional[T]](dst) = Optional[T](_read_scalar[T](data, pos))
 
 
 # Per-type codec dispatch shared by the plain and `Optional[T]` field paths.
