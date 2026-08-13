@@ -68,7 +68,7 @@ def decode_varint(data: Span[Byte, _], mut pos: Int) raises -> UInt64:
         var ptr = data.unsafe_ptr()
         var shift: UInt64 = 0
         for i in range(10):
-            var b = ptr[pos + i]
+            var b = ptr[unsafe_offset=pos + i]
             result |= UInt64(b & 0x7F) << shift
             if (b & 0x80) == 0:
                 pos += i + 1
