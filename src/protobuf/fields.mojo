@@ -220,12 +220,12 @@ def _all_ascii(s: Span[Byte, _]) -> Bool:
     var i = 0
     var acc = SIMD[DType.uint8, W](0)
     while i + W <= n:
-        acc |= ptr.load[width=W](i)
+        acc |= ptr.unsafe_load[width=W](i)
         i += W
     if (acc.reduce_or() & 0x80) != 0:
         return False
     while i < n:
-        if ptr[i] >= 0x80:
+        if ptr[unsafe_offset=i] >= 0x80:
             return False
         i += 1
     return True
@@ -270,7 +270,7 @@ def _packed_simd_prefix[
     var ptr = blob.unsafe_ptr()
     var i = 0
     while i + W <= n:
-        var chunk = ptr.load[width=W](i)
+        var chunk = ptr.unsafe_load[width=W](i)
         var hi = (chunk & SIMD[DType.uint8, W](0x80)).cast[DType.bool]()
         if pack_bits(hi) != 0:
             break  # a multi-byte varint starts in this chunk
