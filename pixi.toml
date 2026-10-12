@@ -10,7 +10,7 @@ readme = "README.md"
 
 [dependencies]
 max = "*"
-mojo = "1.0.*"
+mojo = "1.1.*"
 protobuf = "*"
 libprotobuf = "*"
 
