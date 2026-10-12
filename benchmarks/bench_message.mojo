@@ -106,139 +106,121 @@ def _large() -> Large:
     )
 
 
-@parameter
 def bench_encode_small(mut b: Bencher) raises:
     var msg = _small()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm msg}:
         for _ in range(BATCH):
             keep(Bool(encode(msg)))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(msg.name))
 
 
-@parameter
 def bench_encode_small_reused(mut b: Bencher) raises:
     var msg = _small()
     var buf = List[Byte](capacity=64)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm msg, mut buf}:
         for _ in range(BATCH):
             buf.clear()
             msg.encode_to(buf)
             keep(Bool(buf))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(msg.name))
     keep(Bool(buf))
 
 
-@parameter
 def bench_encode_large_reused(mut b: Bencher) raises:
     var msg = _large()
     var buf = List[Byte](capacity=512)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm msg, mut buf}:
         for _ in range(BATCH):
             buf.clear()
             msg.encode_to(buf)
             keep(Bool(buf))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(msg.name))
     keep(Bool(buf))
 
 
-@parameter
 def bench_decode_small(mut b: Bencher) raises:
     var data = encode(_small())
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm data}:
         for _ in range(BATCH):
             keep(Bool(decode[Small](Span(data)).name))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(data))
 
 
-@parameter
 def bench_roundtrip_small(mut b: Bencher) raises:
     var msg = _small()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm msg}:
         for _ in range(BATCH):
             keep(Bool(decode[Small](Span(encode(msg))).name))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(msg.name))
 
 
-@parameter
 def bench_encode_large(mut b: Bencher) raises:
     var msg = _large()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm msg}:
         for _ in range(BATCH):
             keep(Bool(encode(msg)))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(msg.name))
 
 
-@parameter
 def bench_decode_large(mut b: Bencher) raises:
     var data = encode(_large())
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm data}:
         for _ in range(BATCH):
             keep(Bool(decode[Large](Span(data)).description))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(data))
 
 
-@parameter
 def bench_encoded_size_large(mut b: Bencher) raises:
     var msg = _large()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm msg}:
         for _ in range(BATCH):
             keep(msg.encoded_size())
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(msg.name))
 
 
-@parameter
 def bench_decode_many_ints(mut b: Bencher) raises:
     var data = encode(
         ManyInts(1, -2, 300, -4000, 50000, -600000, 7000000, -80000000)
     )
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm data}:
         for _ in range(BATCH):
             keep(decode[ManyInts](Span(data)).a)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(data))
 
 
@@ -281,7 +263,6 @@ struct Packed(Message):
             skip_field(data, pos, wire_type)
 
 
-@parameter
 def bench_decode_packed_ints(mut b: Bencher) raises:
     # Large packed values (a negative first element -> 10-byte): the SIMD prefix
     # bails on the first chunk, so this checks the scalar path stays neutral.
@@ -291,16 +272,14 @@ def bench_decode_packed_ints(mut b: Bencher) raises:
     var data = encode(p)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm data}:
         for _ in range(BATCH):
             keep(len(decode[Packed](Span(data)).xs))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(data))
 
 
-@parameter
 def bench_decode_packed_small(mut b: Bencher) raises:
     # Small (1-byte) packed values: the common case for numeric arrays, where
     # the SIMD prefix bulk-extracts whole chunks.
@@ -310,26 +289,25 @@ def bench_decode_packed_small(mut b: Bencher) raises:
     var data = encode(p)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm data}:
         for _ in range(BATCH):
             keep(len(decode[Packed](Span(data)).xs))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(data))
 
 
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
-    m.bench_function[bench_encode_small](BenchId("encode_small"))
-    m.bench_function[bench_encode_small_reused](BenchId("encode_small_reused"))
-    m.bench_function[bench_decode_small](BenchId("decode_small"))
-    m.bench_function[bench_roundtrip_small](BenchId("roundtrip_small"))
-    m.bench_function[bench_encode_large](BenchId("encode_large"))
-    m.bench_function[bench_encode_large_reused](BenchId("encode_large_reused"))
-    m.bench_function[bench_decode_large](BenchId("decode_large"))
-    m.bench_function[bench_decode_many_ints](BenchId("decode_many_ints"))
-    m.bench_function[bench_decode_packed_ints](BenchId("decode_packed_ints"))
-    m.bench_function[bench_decode_packed_small](BenchId("decode_packed_small"))
-    m.bench_function[bench_encoded_size_large](BenchId("encoded_size_large"))
+    m.bench_function(bench_encode_small, BenchId("encode_small"))
+    m.bench_function(bench_encode_small_reused, BenchId("encode_small_reused"))
+    m.bench_function(bench_decode_small, BenchId("decode_small"))
+    m.bench_function(bench_roundtrip_small, BenchId("roundtrip_small"))
+    m.bench_function(bench_encode_large, BenchId("encode_large"))
+    m.bench_function(bench_encode_large_reused, BenchId("encode_large_reused"))
+    m.bench_function(bench_decode_large, BenchId("decode_large"))
+    m.bench_function(bench_decode_many_ints, BenchId("decode_many_ints"))
+    m.bench_function(bench_decode_packed_ints, BenchId("decode_packed_ints"))
+    m.bench_function(bench_decode_packed_small, BenchId("decode_packed_small"))
+    m.bench_function(bench_encoded_size_large, BenchId("encoded_size_large"))
     print(m)
