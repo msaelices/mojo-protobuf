@@ -7,7 +7,14 @@ with a long string, a bytes blob, and a nested message stresses the copy paths.
 Run with `pixi run bench-message`.
 """
 
-from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    black_box,
+    keep,
+)
 
 from protobuf.fields import read_bytes, read_packed_signed, skip_field
 from protobuf.message import Message, decode, encode
@@ -297,6 +304,93 @@ def bench_decode_packed_small(mut b: Bencher) raises:
     keep(Bool(data))
 
 
+def _packed_small() -> Packed:
+    # 256 one-byte values: the common case for numeric arrays.
+    var p = Packed()
+    for i in range(256):
+        p.xs.append(Int64(i % 100))
+    return p^
+
+
+def _packed_mixed() -> Packed:
+    # 256 values with bit widths spread over 1..64 in an unpredictable order,
+    # so every varint length from 1 to 10 bytes shows up.
+    var p = Packed()
+    var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+    for _ in range(256):
+        state = state * 6364136223846793005 + 1442695040888963407
+        p.xs.append(Int64((state | 1) >> ((state >> 58) & 63)))
+    return p^
+
+
+def bench_encode_packed_small(mut b: Bencher) raises:
+    var msg = _packed_small()
+    var buf = List[Byte](capacity=1024)
+
+    @always_inline
+    def call_fn() raises {mut msg, mut buf}:
+        for _ in range(BATCH):
+            buf.clear()
+            # Opaque rewrite of one element, so the size pass can't be hoisted
+            # out of the batch loop as loop-invariant.
+            msg.xs[0] = black_box(msg.xs[0])
+            msg.encode_to(buf)
+            keep(Bool(buf))
+
+    b.iter(call_fn)
+    keep(Bool(msg.xs))
+    keep(Bool(buf))
+
+
+def bench_encode_packed_mixed(mut b: Bencher) raises:
+    var msg = _packed_mixed()
+    var buf = List[Byte](capacity=4096)
+
+    @always_inline
+    def call_fn() raises {mut msg, mut buf}:
+        for _ in range(BATCH):
+            buf.clear()
+            # Opaque rewrite of one element, so the size pass can't be hoisted
+            # out of the batch loop as loop-invariant.
+            msg.xs[0] = black_box(msg.xs[0])
+            msg.encode_to(buf)
+            keep(Bool(buf))
+
+    b.iter(call_fn)
+    keep(Bool(msg.xs))
+    keep(Bool(buf))
+
+
+def bench_encoded_size_packed_small(mut b: Bencher) raises:
+    var msg = _packed_small()
+
+    @always_inline
+    def call_fn() raises {mut msg}:
+        for _ in range(BATCH):
+            # Opaque rewrite of one element, so the size pass can't be hoisted
+            # out of the batch loop as loop-invariant.
+            msg.xs[0] = black_box(msg.xs[0])
+            keep(msg.encoded_size())
+
+    b.iter(call_fn)
+    keep(Bool(msg.xs))
+
+
+def bench_encoded_size_packed_mixed(mut b: Bencher) raises:
+    var msg = _packed_mixed()
+
+    @always_inline
+    def call_fn() raises {mut msg}:
+        for _ in range(BATCH):
+            # Opaque rewrite of one element, so the size pass can't be hoisted
+            # out of the batch loop as loop-invariant.
+            msg.xs[0] = black_box(msg.xs[0])
+            keep(msg.encoded_size())
+
+    b.iter(call_fn)
+    keep(Bool(msg.xs))
+
+
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
     m.bench_function(bench_encode_small, BenchId("encode_small"))
@@ -310,4 +404,12 @@ def main() raises:
     m.bench_function(bench_decode_packed_ints, BenchId("decode_packed_ints"))
     m.bench_function(bench_decode_packed_small, BenchId("decode_packed_small"))
     m.bench_function(bench_encoded_size_large, BenchId("encoded_size_large"))
+    m.bench_function(bench_encode_packed_small, BenchId("encode_packed_small"))
+    m.bench_function(bench_encode_packed_mixed, BenchId("encode_packed_mixed"))
+    m.bench_function(
+        bench_encoded_size_packed_small, BenchId("encoded_size_packed_small")
+    )
+    m.bench_function(
+        bench_encoded_size_packed_mixed, BenchId("encoded_size_packed_mixed")
+    )
     print(m)
