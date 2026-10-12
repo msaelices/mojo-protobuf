@@ -12,17 +12,18 @@ Two uses:
   its bytes, so its size has to be known up front anyway.
 """
 
+from std.bit import count_leading_zeros
+
 from protobuf.wire import zigzag_encode
 
 
 def varint_size(value: UInt64) -> Int:
     """Returns the number of bytes `value` occupies as a varint (1 to 10)."""
-    var n = 1
-    var v = value >> 7
-    while v > 0:
-        n += 1
-        v >>= 7
-    return n
+    # A varint carries 7 payload bits per byte, so the size is
+    # ceil(bit_width / 7). `| 1` gives zero a width of 1, and
+    # (bits * 9 + 64) >> 6 equals ceil(bits / 7) for every bits in 1..64.
+    var bits = 64 - Int(count_leading_zeros(value | 1))
+    return (bits * 9 + 64) >> 6
 
 
 def tag_size(field_number: Int) -> Int:
