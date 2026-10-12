@@ -46,93 +46,77 @@ def main() raises:
     var rtp_data = _read("rtpstats.bin")
     var rtpstats = decode[RtpStats](Span(rtp_data))
 
-    @parameter
-    def packed_decode(mut b: Bencher) raises:
+    def packed_decode(mut b: Bencher) raises {imm pdata}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm pdata}:
             keep(len(decode[Packed](Span(pdata)).values))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(pdata))
 
-    @parameter
-    def packed_encode(mut b: Bencher) raises:
+    def packed_encode(mut b: Bencher) raises {imm p}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm p}:
             keep(Bool(encode(p)))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(p.values))
 
-    @parameter
-    def person_decode(mut b: Bencher) raises:
+    def person_decode(mut b: Bencher) raises {imm person_data}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm person_data}:
             keep(Bool(decode[Person](Span(person_data)).name))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(person_data))
 
-    @parameter
-    def person_encode(mut b: Bencher) raises:
+    def person_encode(mut b: Bencher) raises {imm person}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm person}:
             keep(Bool(encode(person)))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(person.name))
 
-    @parameter
-    def participant_decode(mut b: Bencher) raises:
+    def participant_decode(mut b: Bencher) raises {imm part_data}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm part_data}:
             keep(len(decode[ParticipantInfo](Span(part_data)).tracks))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(part_data))
 
-    @parameter
-    def participant_encode(mut b: Bencher) raises:
+    def participant_encode(mut b: Bencher) raises {imm participant}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm participant}:
             keep(Bool(encode(participant)))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(participant.sid))
 
-    @parameter
-    def rtpstats_decode(mut b: Bencher) raises:
+    def rtpstats_decode(mut b: Bencher) raises {imm rtp_data}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm rtp_data}:
             keep(Int(decode[RtpStats](Span(rtp_data)).packets))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Bool(rtp_data))
 
-    @parameter
-    def rtpstats_encode(mut b: Bencher) raises:
+    def rtpstats_encode(mut b: Bencher) raises {imm rtpstats}:
         @always_inline
-        @parameter
-        def f() raises:
+        def f() raises {imm rtpstats}:
             keep(Bool(encode(rtpstats)))
 
-        b.iter[f]()
+        b.iter(f)
         keep(Int(rtpstats.packets))
 
     var m = Bench(BenchConfig(num_repetitions=10))
-    m.bench_function[packed_decode](BenchId("packed_decode"))
-    m.bench_function[packed_encode](BenchId("packed_encode"))
-    m.bench_function[person_decode](BenchId("person_decode"))
-    m.bench_function[person_encode](BenchId("person_encode"))
-    m.bench_function[participant_decode](BenchId("participant_decode"))
-    m.bench_function[participant_encode](BenchId("participant_encode"))
-    m.bench_function[rtpstats_decode](BenchId("rtpstats_decode"))
-    m.bench_function[rtpstats_encode](BenchId("rtpstats_encode"))
+    m.bench_function(packed_decode, BenchId("packed_decode"))
+    m.bench_function(packed_encode, BenchId("packed_encode"))
+    m.bench_function(person_decode, BenchId("person_decode"))
+    m.bench_function(person_encode, BenchId("person_encode"))
+    m.bench_function(participant_decode, BenchId("participant_decode"))
+    m.bench_function(participant_encode, BenchId("participant_encode"))
+    m.bench_function(rtpstats_decode, BenchId("rtpstats_decode"))
+    m.bench_function(rtpstats_encode, BenchId("rtpstats_encode"))
     print(m)
